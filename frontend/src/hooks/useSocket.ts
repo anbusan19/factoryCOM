@@ -3,7 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import { useApiStore, AiAction } from '@/store/useApiStore';
 import { toast } from 'sonner';
 
-const SOCKET_URL = 'http://localhost:3001';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
 
 // Singleton socket — created once for the app lifetime so all hooks share
 // the same connection regardless of how many components mount/unmount.
