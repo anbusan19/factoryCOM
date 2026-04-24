@@ -12,6 +12,7 @@ import orderRoutes from '../routes/orders.js';
 import alertRoutes from '../routes/alerts.js';
 import productionRoutes from '../routes/production.js';
 import qualityControlRoutes from '../routes/qualityControl.js';
+import aiRoutes from '../routes/ai.js';
 
 dotenv.config();
 
@@ -59,6 +60,7 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/alerts', alertRoutes);
 app.use('/api/production', productionRoutes);
 app.use('/api/quality-control', qualityControlRoutes);
+app.use('/api/ai', aiRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

@@ -63,6 +63,15 @@ export interface FactoryOrder {
   paymentStatus?: 'paid' | 'pending' | 'not-paid';
 }
 
+export interface AiAction {
+  id: string;
+  summary: string;
+  actions: Array<{ tool: string; args: Record<string, unknown>; result: Record<string, unknown> }>;
+  actionsCount: number;
+  autonomous: boolean;
+  timestamp: string;
+}
+
 interface ApiState {
   // Data
   machines: Machine[];
@@ -72,6 +81,7 @@ interface ApiState {
   procurementOrders: ProcurementOrder[];
   factoryOrders: FactoryOrder[];
   productionData: any[];
+  aiActions: AiAction[];
   
   // Loading states
   loading: {
@@ -121,6 +131,7 @@ export const useApiStore = create<ApiState>((set, get) => ({
   procurementOrders: [],
   factoryOrders: [],
   productionData: [],
+  aiActions: [],
   
   // Initial loading states
   loading: {

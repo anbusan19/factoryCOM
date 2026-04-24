@@ -6,6 +6,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { MessageSquare, Send, X, Minimize2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { sendFactoryMessage } from '@/lib/geminiApi';
+import { useApiStore } from '@/store/useApiStore';
 
 interface Message {
   id: string;
@@ -22,6 +24,7 @@ const suggestedQueries = [
 ];
 
 export const AIChatWidget = () => {
+  const { machines, workers, factoryOrders, procurementOrders, safetyAlerts } = useApiStore();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
@@ -34,9 +37,10 @@ export const AIChatWidget = () => {
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSendMessage = async () => {
-    if (!inputValue.trim()) return;
+    if (!inputValue.trim() || isTyping) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -45,44 +49,60 @@ export const AIChatWidget = () => {
       timestamp: new Date(),
     };
 
+    const userInput = inputValue;
     setMessages((prev) => [...prev, userMessage]);
     setInputValue('');
     setIsTyping(true);
+    setError(null);
 
-    // Simulate AI response
-    setTimeout(() => {
-      const responses: Record<string, string> = {
-        risk: 'Current overall risk level is at 25.8%, which is within safe parameters. Worker W-003 has an elevated risk index of 62 and should be monitored closely.',
-        supplier: 'There are currently 2 delayed suppliers: Steel Corp (2 days) and Metal Works Inc (1 day). Both have communicated revised ETAs.',
-        simulate: 'Simulating Machine A failure... Safety protocols activated. Worker reassignment initiated. Maintenance team notified. Estimated downtime: 4 hours.',
-        efficiency: 'Current production efficiency is at 91.2%. Top performer: Machine M-005 (96%). Machine M-003 is operating at reduced capacity (42%) due to reported fault.',
+    try {
+      // Prepare conversation history (excluding the initial greeting)
+      const conversationHistory = messages
+        .filter((msg) => msg.id !== '1')
+        .map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+        }));
+
+      // Prepare factory context
+      const factoryContext = {
+        machines,
+        workers,
+        orders: [...factoryOrders, ...procurementOrders],
+        alerts: safetyAlerts,
       };
 
-      let responseText = 'I\'ve analyzed your query. ';
-      const query = inputValue.toLowerCase();
-      
-      if (query.includes('risk')) {
-        responseText += responses.risk;
-      } else if (query.includes('supplier') || query.includes('delayed')) {
-        responseText += responses.supplier;
-      } else if (query.includes('simulate') || query.includes('failure')) {
-        responseText += responses.simulate;
-      } else if (query.includes('efficiency') || query.includes('production')) {
-        responseText += responses.efficiency;
-      } else {
-        responseText += 'I can help you monitor machines, analyze worker safety, check procurement status, or run simulations. Try one of the suggested queries below!';
-      }
+      // Call Gemini API
+      const response = await sendFactoryMessage(
+        userInput,
+        conversationHistory,
+        factoryContext
+      );
 
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: responseText,
+        content: response,
         timestamp: new Date(),
       };
 
       setMessages((prev) => [...prev, aiMessage]);
+    } catch (error) {
+      console.error('Error calling Gemini API:', error);
+      setError('Failed to get response. Please try again.');
+      
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: 'I apologize, but I encountered an error processing your request. Please try again or rephrase your question.',
+        timestamp: new Date(),
+      };
+
+      setMessages((prev) => [...prev, errorMessage]);
+      toast.error('Failed to get AI response');
+    } finally {
       setIsTyping(false);
-    }, 1500);
+    }
   };
 
   const handleSuggestedQuery = (query: string) => {
@@ -194,7 +214,7 @@ export const AIChatWidget = () => {
                             : 'bg-muted'
                         }`}
                       >
-                        <p className="text-sm">{message.content}</p>
+                        <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                       </div>
                     </div>
                   ))}
@@ -206,6 +226,13 @@ export const AIChatWidget = () => {
                           <div className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce delay-100" />
                           <div className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce delay-200" />
                         </div>
+                      </div>
+                    </div>
+                  )}
+                  {error && (
+                    <div className="flex justify-start">
+                      <div className="bg-destructive/10 text-destructive rounded-lg p-3 max-w-[80%]">
+                        <p className="text-sm">{error}</p>
                       </div>
                     </div>
                   )}
@@ -222,7 +249,12 @@ export const AIChatWidget = () => {
                     placeholder="Ask me anything..."
                     className="flex-1"
                   />
-                  <Button onClick={handleSendMessage} size="icon" aria-label="Send message">
+                  <Button 
+                    onClick={handleSendMessage} 
+                    size="icon" 
+                    aria-label="Send message"
+                    disabled={isTyping || !inputValue.trim()}
+                  >
                     <Send className="w-4 h-4" />
                   </Button>
                   <Button variant="outline" onClick={() => setIsOpen(false)} aria-label="Close chat">

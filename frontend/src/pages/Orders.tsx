@@ -2,10 +2,14 @@ import { Layout } from '@/components/layout/Layout';
 import { Card } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useApiStore } from '@/store/useApiStore';
 import { format, addDays } from 'date-fns';
 import { useEffect, useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import Map, { Marker, Popup } from 'react-map-gl';
+import { getFactoryCoordinates, getFactoryCity } from '@/lib/factoryLocations';
+import type { FactoryOrder } from '@/store/useApiStore';
 
 const Orders = () => {
   const { factoryOrders, fetchFactoryOrders, updateFactoryOrder, loading } = useApiStore();
@@ -67,6 +71,77 @@ const Orders = () => {
 
   const [trackingFor, setTrackingFor] = useState<string | null>(null);
   const activeOrder = useMemo(() => factoryOrders.find((o) => o.id === trackingFor) || null, [factoryOrders, trackingFor]);
+  const [viewMode, setViewMode] = useState<'table' | 'map'>('table');
+  const [popupInfo, setPopupInfo] = useState<FactoryOrder | null>(null);
+
+  const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN;
+
+  // Get status color for markers
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return '#22c55e'; // green
+      case 'in-production':
+        return '#3b82f6'; // blue
+      case 'in-transit':
+        return '#f59e0b'; // amber
+      case 'out-for-delivery':
+        return '#8b5cf6'; // purple
+      case 'placed':
+        return '#6b7280'; // gray
+      case 'cancelled':
+        return '#ef4444'; // red
+      default:
+        return '#6b7280';
+    }
+  };
+
+  // Calculate map bounds to fit all markers
+  const mapBounds = useMemo(() => {
+    if (factoryOrders.length === 0) return null;
+    
+    const coordinates = factoryOrders.map(order => getFactoryCoordinates(order.factoryName));
+    const lngs = coordinates.map(c => c[0]);
+    const lats = coordinates.map(c => c[1]);
+    
+    return {
+      minLng: Math.min(...lngs),
+      maxLng: Math.max(...lngs),
+      minLat: Math.min(...lats),
+      maxLat: Math.max(...lats),
+    };
+  }, [factoryOrders]);
+
+  // Calculate center and zoom
+  const mapViewState = useMemo(() => {
+    if (!mapBounds) {
+      return {
+        longitude: 77.1025,
+        latitude: 28.7041,
+        zoom: 5,
+      };
+    }
+    
+    const centerLng = (mapBounds.minLng + mapBounds.maxLng) / 2;
+    const centerLat = (mapBounds.minLat + mapBounds.maxLat) / 2;
+    
+    // Calculate zoom level based on bounds
+    const lngDiff = mapBounds.maxLng - mapBounds.minLng;
+    const latDiff = mapBounds.maxLat - mapBounds.minLat;
+    const maxDiff = Math.max(lngDiff, latDiff);
+    
+    let zoom = 5;
+    if (maxDiff < 0.1) zoom = 10;
+    else if (maxDiff < 0.5) zoom = 8;
+    else if (maxDiff < 1) zoom = 6;
+    else zoom = 5;
+    
+    return {
+      longitude: centerLng,
+      latitude: centerLat,
+      zoom,
+    };
+  }, [mapBounds]);
 
   const trackingEvents = useMemo(() => {
     if (!activeOrder) return [] as { label: string; date: Date; done: boolean }[];
@@ -105,42 +180,170 @@ const Orders = () => {
 
         <Card className="glass p-6">
           <h3 className="text-lg font-semibold mb-6">Placed Orders</h3>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Order ID</TableHead>
-                <TableHead>Factory</TableHead>
-                <TableHead>Location</TableHead>
-                <TableHead>Qty</TableHead>
-                <TableHead>Unit Price</TableHead>
-                <TableHead>Total</TableHead>
-                <TableHead>Lead Time</TableHead>
-                <TableHead>Created</TableHead>
-              <TableHead>Payments</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {factoryOrders.map((o) => (
-                <TableRow key={o.id}>
-                  <TableCell className="font-medium">{o.id}</TableCell>
-                  <TableCell>{o.factoryName}</TableCell>
-                  <TableCell>{o.area}</TableCell>
-                  <TableCell>{o.quantity}</TableCell>
-                  <TableCell>₹{o.unitPrice.toFixed(2)}</TableCell>
-                  <TableCell>₹{o.totalPrice.toFixed(2)}</TableCell>
-                  <TableCell>{o.leadTimeDays} days</TableCell>
-                  <TableCell>{format(o.createdAt, 'MMM dd, yyyy HH:mm')}</TableCell>
-                <TableCell>{getPaymentBadge(o.paymentStatus)}</TableCell>
-                  <TableCell>
-                    <button className="underline underline-offset-4" onClick={() => setTrackingFor(o.id)}>
-                      {getStatusBadge(o.status)}
-                    </button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'table' | 'map')}>
+            <TabsList className="mb-6">
+              <TabsTrigger value="table">Table View</TabsTrigger>
+              <TabsTrigger value="map">Map View</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="table">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Order ID</TableHead>
+                    <TableHead>Factory</TableHead>
+                    <TableHead>Location</TableHead>
+                    <TableHead>Qty</TableHead>
+                    <TableHead>Unit Price</TableHead>
+                    <TableHead>Total</TableHead>
+                    <TableHead>Lead Time</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead>Payments</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {factoryOrders.map((o) => (
+                    <TableRow key={o.id}>
+                      <TableCell className="font-medium">{o.id}</TableCell>
+                      <TableCell>{o.factoryName}</TableCell>
+                      <TableCell>{getFactoryCity(o.factoryName)} - {o.area}</TableCell>
+                      <TableCell>{o.quantity}</TableCell>
+                      <TableCell>₹{o.unitPrice.toFixed(2)}</TableCell>
+                      <TableCell>₹{o.totalPrice.toFixed(2)}</TableCell>
+                      <TableCell>{o.leadTimeDays} days</TableCell>
+                      <TableCell>{format(o.createdAt, 'MMM dd, yyyy HH:mm')}</TableCell>
+                      <TableCell>{getPaymentBadge(o.paymentStatus)}</TableCell>
+                      <TableCell>
+                        <button className="underline underline-offset-4" onClick={() => setTrackingFor(o.id)}>
+                          {getStatusBadge(o.status)}
+                        </button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TabsContent>
+            
+            <TabsContent value="map">
+              <div className="h-[600px] w-full rounded-lg overflow-hidden border">
+                <Map
+                  mapboxAccessToken={MAPBOX_TOKEN}
+                  initialViewState={mapViewState}
+                  style={{ width: '100%', height: '100%' }}
+                  mapStyle="mapbox://styles/mapbox/light-v11"
+                  onMove={(evt) => {
+                    // Allow map movement
+                  }}
+                >
+                  {factoryOrders.map((order) => {
+                    const [lng, lat] = getFactoryCoordinates(order.factoryName);
+                    return (
+                      <Marker
+                        key={order.id}
+                        longitude={lng}
+                        latitude={lat}
+                        anchor="bottom"
+                        onClick={() => {
+                          setPopupInfo(order);
+                        }}
+                      >
+                        <div
+                          className="cursor-pointer"
+                          style={{
+                            width: 24,
+                            height: 24,
+                            borderRadius: '50%',
+                            backgroundColor: getStatusColor(order.status),
+                            border: '2px solid white',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: 12,
+                              height: 12,
+                              borderRadius: '50%',
+                              backgroundColor: 'white',
+                            }}
+                          />
+                        </div>
+                      </Marker>
+                    );
+                  })}
+                  
+                  {popupInfo && (
+                    <Popup
+                      longitude={getFactoryCoordinates(popupInfo.factoryName)[0]}
+                      latitude={getFactoryCoordinates(popupInfo.factoryName)[1]}
+                      anchor="top"
+                      onClose={() => setPopupInfo(null)}
+                      closeButton={true}
+                      closeOnClick={false}
+                    >
+                      <div className="p-2 min-w-[250px]">
+                        <div className="font-semibold text-lg mb-2">{popupInfo.factoryName}</div>
+                        <div className="text-sm space-y-1">
+                          <div><span className="font-medium">Order ID:</span> {popupInfo.id}</div>
+                          <div><span className="font-medium">Location:</span> {getFactoryCity(popupInfo.factoryName)} - {popupInfo.area}</div>
+                          <div><span className="font-medium">Quantity:</span> {popupInfo.quantity}</div>
+                          <div><span className="font-medium">Total:</span> ₹{popupInfo.totalPrice.toFixed(2)}</div>
+                          <div><span className="font-medium">Lead Time:</span> {popupInfo.leadTimeDays} days</div>
+                          <div><span className="font-medium">Created:</span> {format(popupInfo.createdAt, 'MMM dd, yyyy')}</div>
+                          <div className="flex items-center gap-2 mt-2">
+                            <span className="font-medium">Status:</span>
+                            {getStatusBadge(popupInfo.status)}
+                          </div>
+                          <div className="flex items-center gap-2 mt-2">
+                            <span className="font-medium">Payment:</span>
+                            {getPaymentBadge(popupInfo.paymentStatus)}
+                          </div>
+                          <button
+                            className="mt-3 w-full text-sm bg-primary text-primary-foreground px-3 py-1.5 rounded-md hover:bg-primary/90 transition-colors"
+                            onClick={() => {
+                              setTrackingFor(popupInfo.id);
+                              setPopupInfo(null);
+                            }}
+                          >
+                            View Tracking
+                          </button>
+                        </div>
+                      </div>
+                    </Popup>
+                  )}
+                </Map>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-4 text-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-[#22c55e] border-2 border-white"></div>
+                  <span>Completed</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-[#3b82f6] border-2 border-white"></div>
+                  <span>In Production</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-[#f59e0b] border-2 border-white"></div>
+                  <span>In Transit</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-[#8b5cf6] border-2 border-white"></div>
+                  <span>Out for Delivery</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-[#6b7280] border-2 border-white"></div>
+                  <span>Placed</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-[#ef4444] border-2 border-white"></div>
+                  <span>Cancelled</span>
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
         </Card>
         <Dialog open={!!trackingFor} onOpenChange={(open) => !open && setTrackingFor(null)}>
           <DialogContent>

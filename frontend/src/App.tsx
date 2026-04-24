@@ -13,6 +13,7 @@ import FileViewer from "./pages/FileViewer";
 import QualityControl from "./pages/QualityControl";
 import NotFound from "./pages/NotFound";
 import Warehouse from "./pages/Warehouse";
+import ManagerChat from "./pages/ManagerChat";
 
 const queryClient = new QueryClient();
 
@@ -32,6 +33,7 @@ const App = () => (
           <Route path="/workforce" element={<Workforce />} />
           <Route path="/file-viewer" element={<FileViewer />} />
           <Route path="/quality-control" element={<QualityControl />} />
+          <Route path="/manager-chat" element={<ManagerChat />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

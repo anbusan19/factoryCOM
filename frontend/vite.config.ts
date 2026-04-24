@@ -15,4 +15,13 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  optimizeDeps: {
+    include: ["react-map-gl", "mapbox-gl"],
+    esbuildOptions: {
+      target: "es2020",
+    },
+  },
+  define: {
+    global: "globalThis",
+  },
 }));
