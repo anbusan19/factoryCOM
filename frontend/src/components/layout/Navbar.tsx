@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Bot } from 'lucide-react';
+import { Bot, Cctv, FlaskConical } from 'lucide-react';
 
 export const Navbar = () => {
   return (
@@ -125,6 +125,32 @@ export const Navbar = () => {
             >
               <Bot className="w-4 h-4" />
               Manager AI
+            </NavLink>
+            <NavLink
+              to="/cctv"
+              className={({ isActive }) =>
+                `px-4 py-2 rounded-lg transition-smooth flex items-center gap-1.5 ${
+                  isActive
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-sidebar-accent'
+                }`
+              }
+            >
+              <Cctv className="w-4 h-4" />
+              CCTV
+            </NavLink>
+            <NavLink
+              to="/cctv-testing"
+              className={({ isActive }) =>
+                `px-4 py-2 rounded-lg transition-smooth flex items-center gap-1.5 ${
+                  isActive
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-sidebar-accent'
+                }`
+              }
+            >
+              <FlaskConical className="w-4 h-4" />
+              CCTV Testing
             </NavLink>
           </div>
         </div>
