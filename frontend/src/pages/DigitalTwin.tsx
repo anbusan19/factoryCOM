@@ -184,9 +184,14 @@ const DigitalTwin = () => {
                 <Machine
                   key={m.id}
                   position={gridPosition(i, machines.length)}
+                  color="#111827"
+                  status={m.status}
                   machineData={m}
                   isSelected={selectedMachine?.id === m.id}
-                  onSelect={setSelectedMachine}
+                  onSelect={(data) => {
+                    const full = machines.find(x => x.id === data.id);
+                    if (full) setSelectedMachine(full);
+                  }}
                 />
               ))}
             </Canvas>
