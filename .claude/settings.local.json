@@ -3,7 +3,10 @@
     "allow": [
       "Bash(wc:*)",
       "Bash(pnpm add:*)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }
