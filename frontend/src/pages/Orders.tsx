@@ -249,7 +249,7 @@ const Orders = () => {
 
             {/* ── Map ────────────────────────────────────────────────────── */}
             <TabsContent value="map">
-              <div className="relative h-[600px] w-full rounded-xl overflow-hidden border border-border shadow-sm">
+              <div className="relative h-[600px] w-full rounded-xl border border-border shadow-sm [&_.mapboxgl-map]:!overflow-visible">
                 <Map
                   mapboxAccessToken={MAPBOX_TOKEN}
                   initialViewState={mapViewState}
@@ -332,9 +332,9 @@ const Orders = () => {
                       offset={40}
                       closeButton={false}
                       closeOnClick={false}
-                      className="!p-0 !rounded-xl !overflow-hidden"
+                      className="!p-0 !rounded-xl !overflow-visible"
                     >
-                      <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-3 min-w-[200px]">
+                      <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-3 w-[200px]">
                         <div className="flex items-start justify-between gap-3 mb-2">
                           <div>
                             <p className="font-semibold text-sm text-gray-900 leading-tight">
@@ -366,12 +366,13 @@ const Orders = () => {
                       latitude={getFactoryCoordinates(popupInfo.factoryName)[1]}
                       anchor="top"
                       offset={10}
+                      maxWidth="300px"
                       onClose={() => setPopupInfo(null)}
                       closeButton={true}
                       closeOnClick={false}
-                      className="!p-0 !rounded-xl !overflow-hidden"
+                      className="!p-0 !rounded-xl !overflow-visible"
                     >
-                      <div className="bg-white rounded-xl shadow-xl border border-gray-200 min-w-[280px]">
+                      <div className="bg-white rounded-xl shadow-xl border border-gray-200 w-[280px]">
                         {/* Header */}
                         <div
                           className="px-4 py-3 border-b border-gray-100"
