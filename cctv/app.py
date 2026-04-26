@@ -48,7 +48,13 @@ except Exception:
         s1.astype(float) * a + s2.astype(float) * b + g, 0, 255).astype(np.uint8)
     _shim.imencode = lambda ext, img, params=None: (True, np.array([]))
     _shim.imdecode = lambda buf, flags: None
+    _shim.imshow = lambda *a, **kw: None
+    _shim.imwrite = lambda *a, **kw: True
+    _shim.waitKey = lambda delay=0: -1
     _shim.destroyAllWindows = lambda: None
+    _shim.IMREAD_COLOR = 1
+    _shim.IMREAD_GRAYSCALE = 0
+    _shim.IMREAD_UNCHANGED = -1
 
     class _VideoCapture:
         def __init__(self, *a, **kw): pass
