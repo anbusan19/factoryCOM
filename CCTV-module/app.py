@@ -299,7 +299,7 @@ def main_loop() -> None:
 
     source_choice = st.sidebar.selectbox(
         "Video source",
-        ("Webcam 0", "Webcam 1", "Video file", "RTSP/HTTP URL"),
+        ("RTSP/HTTP URL", "Video file", "Webcam 0", "Webcam 1"),
     )
 
     if source_choice.startswith("Webcam"):
@@ -309,9 +309,9 @@ def main_loop() -> None:
     else:
         video_source = st.sidebar.text_input("RTSP or HTTP URL", "rtsp://user:pass@host/stream")
 
-    run_stream = st.sidebar.checkbox("Run detector", value=True, key="run_detector")
+    run_stream = st.sidebar.checkbox("Run detector", value=False, key="run_detector")
     if not run_stream:
-        st.info("Enable 'Run detector' in the sidebar to start streaming.")
+        st.info("Enable **Run detector** in the sidebar to start streaming. Select your video source first.")
         return
 
     try:
@@ -323,12 +323,17 @@ def main_loop() -> None:
     tracker = PersonTracker()
     alert_manager = AlertManager()
 
-    capture = cv2.VideoCapture(video_source)
-    capture.set(cv2.CAP_PROP_FRAME_WIDTH, resize_width)
-    capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    try:
+        capture = cv2.VideoCapture(video_source)
+        capture.set(cv2.CAP_PROP_FRAME_WIDTH, resize_width)
+        capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    except Exception as exc:
+        st.error(f"Failed to open video source: {exc}")
+        st.stop()
 
     if not capture.isOpened():
-        st.error("Unable to open the selected video source.")
+        src_label = f"webcam {video_source}" if isinstance(video_source, int) else str(video_source)
+        st.error(f"Unable to open **{src_label}**. On Streamlit Cloud, webcam access is not supported — use an RTSP/HTTP URL or a video file instead.")
         st.stop()
 
     frame_placeholder = st.empty()
