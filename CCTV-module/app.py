@@ -3,13 +3,22 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Sequence
 
-import cv2
 import numpy as np
 import streamlit as st
+from PIL import Image, ImageDraw
 import torch
 from ultralytics import YOLO
 
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
+# cv2 is optional — only needed for RTSP / file / local webcam sources.
+# The primary path uses st.camera_input() which needs no system OpenCV libs.
+try:
+    import cv2
+    _CV2_OK = True
+except Exception:
+    cv2 = None
+    _CV2_OK = False
 
 TARGET_CLASSES = {"person", "helmet", "no-helmet"}
 DEFAULT_WEIGHTS = os.getenv("YOLO11_WEIGHTS", "yolo11n.pt")
@@ -30,90 +39,71 @@ class PersonTracker:
     def __init__(self, iou_threshold: float = 0.5, max_age: int = 15) -> None:
         self.iou_threshold = iou_threshold
         self.max_age = max_age
-        self.tracks: Dict[int, Dict[str, Sequence[float]]] = {}
+        self.tracks: Dict[int, Dict] = {}
         self.next_id = 1
 
     def update(self, detections: List[Dict]) -> List[Dict]:
         assignments: List[Dict] = []
-        assigned_track_ids = set()
+        assigned_track_ids: set = set()
 
         for det in detections:
             bbox = det["bbox"]
-            best_iou = 0.0
-            best_track_id = None
-
+            best_iou, best_track_id = 0.0, None
             for track_id, track in self.tracks.items():
                 iou = compute_iou(bbox, track["bbox"])
                 if iou > best_iou:
-                    best_iou = iou
-                    best_track_id = track_id
+                    best_iou, best_track_id = iou, track_id
 
             if best_iou >= self.iou_threshold and best_track_id is not None:
                 self.tracks[best_track_id]["bbox"] = bbox
                 self.tracks[best_track_id]["age"] = 0
-                det_with_track = det.copy()
-                det_with_track["track_id"] = best_track_id
-                assignments.append(det_with_track)
-                assigned_track_ids.add(best_track_id)
+                d = det.copy(); d["track_id"] = best_track_id
+                assignments.append(d); assigned_track_ids.add(best_track_id)
             else:
-                track_id = self.next_id
-                self.next_id += 1
-                self.tracks[track_id] = {"bbox": bbox, "age": 0}
-                det_with_track = det.copy()
-                det_with_track["track_id"] = track_id
-                assignments.append(det_with_track)
-                assigned_track_ids.add(track_id)
+                tid = self.next_id; self.next_id += 1
+                self.tracks[tid] = {"bbox": bbox, "age": 0}
+                d = det.copy(); d["track_id"] = tid
+                assignments.append(d); assigned_track_ids.add(tid)
 
-        for track_id in list(self.tracks.keys()):
-            if track_id not in assigned_track_ids:
-                self.tracks[track_id]["age"] = self.tracks[track_id].get("age", 0) + 1
-                if self.tracks[track_id]["age"] > self.max_age:
-                    self.tracks.pop(track_id, None)
-
+        for tid in list(self.tracks):
+            if tid not in assigned_track_ids:
+                self.tracks[tid]["age"] = self.tracks[tid].get("age", 0) + 1
+                if self.tracks[tid]["age"] > self.max_age:
+                    self.tracks.pop(tid, None)
         return assignments
 
 
 class AlertManager:
     def __init__(self, threshold: int = ALERT_STREAK_FRAMES) -> None:
         self.threshold = threshold
-        self.state: Dict[int, Dict[str, int]] = {}
+        self.state: Dict[int, Dict] = {}
 
     def update(self, track_id: int, violation: bool) -> bool:
-        record = self.state.setdefault(track_id, {"streak": 0, "alerted": False})
-
+        rec = self.state.setdefault(track_id, {"streak": 0, "alerted": False})
         if violation:
-            record["streak"] += 1
+            rec["streak"] += 1
         else:
-            record["streak"] = 0
-            record["alerted"] = False
-
-        if violation and record["streak"] >= self.threshold and not record["alerted"]:
-            record["alerted"] = True
-            return True
+            rec["streak"] = 0; rec["alerted"] = False
+        if violation and rec["streak"] >= self.threshold and not rec["alerted"]:
+            rec["alerted"] = True; return True
         return False
 
     def prune(self, active_ids: Sequence[int]) -> None:
-        active_set = set(active_ids)
-        for track_id in list(self.state.keys()):
-            if track_id not in active_set:
-                self.state.pop(track_id, None)
+        active = set(active_ids)
+        for tid in list(self.state):
+            if tid not in active:
+                self.state.pop(tid, None)
 
 
 def compute_iou(box_a: Sequence[float], box_b: Sequence[float]) -> float:
     ax1, ay1, ax2, ay2 = box_a
     bx1, by1, bx2, by2 = box_b
-
-    inter_x1 = max(ax1, bx1)
-    inter_y1 = max(ay1, by1)
-    inter_x2 = min(ax2, bx2)
-    inter_y2 = min(ay2, by2)
-    inter_area = max(0.0, inter_x2 - inter_x1) * max(0.0, inter_y2 - inter_y1)
-
-    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
-    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
-    denom = area_a + area_b - inter_area
-
-    return inter_area / denom if denom > 0 else 0.0
+    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    inter = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    union = (max(0.0, ax2-ax1)*max(0.0, ay2-ay1) +
+             max(0.0, bx2-bx1)*max(0.0, by2-by1) - inter)
+    return inter / union if union > 0 else 0.0
 
 
 @st.cache_resource(show_spinner=False)
@@ -152,71 +142,52 @@ def process_frame(
 
     boxes = getattr(result, "boxes", None)
     if boxes is None or boxes.cls is None or boxes.xyxy is None:
-        tracker.update([])
-        alert_manager.prune([])
+        tracker.update([]); alert_manager.prune([])
         return people_summary, helmet_detections, bare_detections, stats, alerts
 
     names = result.names or model.names
     xyxy = boxes.xyxy.cpu().numpy()
     classes = boxes.cls.int().cpu().tolist()
     scores = boxes.conf.cpu().tolist()
-
     person_detections: List[Dict] = []
 
     for box, cls_id, score in zip(xyxy, classes, scores):
-        label = names.get(int(cls_id), str(cls_id)) if isinstance(names, dict) else names[int(cls_id)]
+        label = (names.get(int(cls_id), str(cls_id))
+                 if isinstance(names, dict) else names[int(cls_id)])
         if label not in TARGET_CLASSES:
             continue
-
         det = {"bbox": box.tolist(), "conf": float(score), "label": label}
-        if label == "person":
-            person_detections.append(det)
-        elif label == "helmet":
-            helmet_detections.append(det)
-        elif label == "no-helmet":
-            bare_detections.append(det)
+        if label == "person":       person_detections.append(det)
+        elif label == "helmet":     helmet_detections.append(det)
+        elif label == "no-helmet":  bare_detections.append(det)
 
-    tracked_people = tracker.update(person_detections)
-    active_ids = [det["track_id"] for det in tracked_people]
+    tracked = tracker.update(person_detections)
+    active_ids = [d["track_id"] for d in tracked]
     alert_manager.prune(active_ids)
 
-    for det in tracked_people:
+    for det in tracked:
         bbox = det["bbox"]
-        helmet_overlap = max((compute_iou(bbox, helm["bbox"]) for helm in helmet_detections), default=0.0)
-        bare_overlap = max((compute_iou(bbox, bare["bbox"]) for bare in bare_detections), default=0.0)
-
-        if helmet_overlap >= correlation_iou:
-            state = "with_helmet"
-        elif bare_overlap >= correlation_iou:
-            state = "without_helmet"
-        else:
-            state = "without_helmet"
-
+        h_iou = max((compute_iou(bbox, h["bbox"]) for h in helmet_detections), default=0.0)
+        b_iou = max((compute_iou(bbox, b["bbox"]) for b in bare_detections), default=0.0)
+        state = "with_helmet" if h_iou >= correlation_iou else "without_helmet"
         violation = state == "without_helmet"
         triggered = alert_manager.update(det["track_id"], violation)
-
-        det_summary = {
-            "track_id": det["track_id"],
-            "bbox": bbox,
-            "conf": det["conf"],
-            "state": state,
-            "alert": triggered,
-            "overlap": max(helmet_overlap, bare_overlap),
-        }
-        people_summary.append(det_summary)
-
+        people_summary.append({
+            "track_id": det["track_id"], "bbox": bbox, "conf": det["conf"],
+            "state": state, "alert": triggered,
+            "overlap": max(h_iou, b_iou),
+        })
         if triggered:
             alerts.append(f"ALERT: Person #{det['track_id']} without helmet for {ALERT_STREAK_FRAMES}+ frames")
 
     stats.total_people = len(people_summary)
-    stats.with_helmet = sum(1 for det in people_summary if det["state"] == "with_helmet")
+    stats.with_helmet = sum(1 for d in people_summary if d["state"] == "with_helmet")
     stats.without_helmet = stats.total_people - stats.with_helmet
-
     return people_summary, helmet_detections, bare_detections, stats, alerts
 
 
-def draw_analytics(
-    frame: np.ndarray,
+def draw_analytics_pil(
+    image: Image.Image,
     people: List[Dict],
     helmets: List[Dict],
     bare: List[Dict],
@@ -224,189 +195,212 @@ def draw_analytics(
     *,
     show_helmets: bool,
     show_bare: bool,
-) -> np.ndarray:
-    annotated = frame.copy()
+) -> Image.Image:
+    """Annotate frame using PIL only — no cv2 required."""
+    img = image.convert("RGBA")
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
 
-    def _draw_box(bbox, color, label):
+    def _rect(bbox, color, width=2):
         x1, y1, x2, y2 = map(int, bbox)
-        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 1)
-        cv2.putText(annotated, label, (x1, max(15, y1 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
+        for i in range(width):
+            draw.rectangle([x1-i, y1-i, x2+i, y2+i], outline=(*color, 230))
+
+    def _label(bbox, text, color):
+        x1, y1 = int(bbox[0]), int(bbox[1])
+        tw, th = len(text) * 6, 14
+        ty = max(y1 - th - 2, 0)
+        draw.rectangle([x1, ty, x1 + tw + 4, ty + th + 2], fill=(*color, 200))
+        draw.text((x1 + 2, ty + 1), text, fill=(255, 255, 255, 255))
 
     if show_helmets:
-        for helmet in helmets:
-            _draw_box(helmet["bbox"], (0, 180, 255), f"Helmet {helmet['conf']:.2f}")
-
+        for h in helmets:
+            _rect(h["bbox"], (0, 180, 255)); _label(h["bbox"], f"Helmet {h['conf']:.2f}", (0, 140, 200))
     if show_bare:
-        for bare_det in bare:
-            _draw_box(bare_det["bbox"], (255, 0, 0), f"NoHelmet {bare_det['conf']:.2f}")
+        for b in bare:
+            _rect(b["bbox"], (220, 50, 50)); _label(b["bbox"], f"NoHelmet {b['conf']:.2f}", (180, 30, 30))
 
-    for person in people:
-        color = (0, 200, 0) if person["state"] == "with_helmet" else (0, 0, 255)
-        thickness = 3 if person.get("alert") else 2
-        label = f"ID {person['track_id']} | {'Helmet' if person['state']=='with_helmet' else 'No Helmet'}"
-        x1, y1, x2, y2 = map(int, person["bbox"])
-        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, thickness)
-        cv2.putText(
-            annotated,
-            f"{label} ({person['conf']:.2f})",
-            (x1, max(20, y1 - 10)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            color,
-            2 if person.get("alert") else 1,
-            cv2.LINE_AA,
-        )
-        if person.get("alert"):
-            cv2.putText(
-                annotated,
-                "ALERT",
-                (x1, y2 + 20),
-                cv2.FONT_HERSHEY_DUPLEX,
-                0.6,
-                (0, 0, 255),
-                2,
-                cv2.LINE_AA,
-            )
+    for p in people:
+        color = (0, 200, 0) if p["state"] == "with_helmet" else (220, 30, 30)
+        width = 4 if p.get("alert") else 2
+        _rect(p["bbox"], color, width)
+        lbl = f"ID{p['track_id']} {'OK' if p['state']=='with_helmet' else 'NO HELMET'} ({p['conf']:.2f})"
+        _label(p["bbox"], lbl, color)
+        if p.get("alert"):
+            x1, _, _, y2 = map(int, p["bbox"])
+            draw.text((x1, y2 + 4), "!! ALERT", fill=(255, 50, 50, 255))
 
-    overlay = annotated.copy()
-    cv2.rectangle(overlay, (10, 10), (280, 120), (0, 0, 0), -1)
-    cv2.addWeighted(overlay, 0.35, annotated, 0.65, 0, annotated)
-
-    cv2.putText(annotated, f"Total: {stats.total_people}", (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-    cv2.putText(annotated, f"Helmet: {stats.with_helmet}", (20, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-    cv2.putText(annotated, f"No Helmet: {stats.without_helmet}", (20, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+    # Stats box
+    draw.rectangle([8, 8, 220, 95], fill=(0, 0, 0, 140))
+    draw.text((16, 14), f"People : {stats.total_people}", fill=(240, 240, 240, 255))
+    draw.text((16, 34), f"Helmet : {stats.with_helmet}",  fill=(60, 220, 60, 255))
+    draw.text((16, 54), f"No Helmet: {stats.without_helmet}", fill=(220, 60, 60, 255))
     if stats.fps:
-        cv2.putText(annotated, f"FPS: {stats.fps:.1f}", (20, 125), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+        draw.text((16, 74), f"FPS    : {stats.fps:.1f}", fill=(220, 200, 60, 255))
 
-    return annotated
+    return Image.alpha_composite(img, overlay).convert("RGB")
 
 
-def main_loop() -> None:
-    st.title("CCTV Helmet Detector")
-    st.caption("YOLOv11 (Ultralytics) + Streamlit dashboard")
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    st.sidebar.markdown(f"**Compute device:** {device.upper()}")
-
-    weights_path = st.sidebar.text_input("YOLOv11 weights", DEFAULT_WEIGHTS)
-    conf_th = st.sidebar.slider("Confidence threshold", 0.1, 0.95, 0.4, 0.05)
-    nms_iou = st.sidebar.slider("NMS IoU", 0.1, 0.95, 0.5, 0.05)
-    correlation_iou = st.sidebar.slider("Helmet correlation IoU", 0.1, 0.9, 0.3, 0.05)
-    resize_width = st.sidebar.slider("Inference width (px)", 320, 1920, 960, 40)
-    target_fps = st.sidebar.slider("Target FPS cap", 10, 60, 30, 5)
-    show_helmets = st.sidebar.checkbox("Show helmet boxes", value=True)
-    show_bare = st.sidebar.checkbox("Show no-helmet boxes", value=True)
-
-    source_choice = st.sidebar.selectbox(
-        "Video source",
-        ("RTSP/HTTP URL", "Video file", "Webcam 0", "Webcam 1"),
-    )
-
-    if source_choice.startswith("Webcam"):
-        video_source: int | str = int(source_choice.split()[-1])
-    elif source_choice == "Video file":
-        video_source = st.sidebar.text_input("Path to video file", "sample.mp4")
-    else:
-        video_source = st.sidebar.text_input("RTSP or HTTP URL", "rtsp://user:pass@host/stream")
-
-    run_stream = st.sidebar.checkbox("Run detector", value=False, key="run_detector")
-    if not run_stream:
-        st.info("Enable **Run detector** in the sidebar to start streaming. Select your video source first.")
-        return
-
-    try:
-        model = load_model(weights_path, device)
-    except Exception as exc:  # pylint: disable=broad-except
-        st.error(f"Unable to load YOLOv11 weights: {exc}")
-        st.stop()
-
-    tracker = PersonTracker()
-    alert_manager = AlertManager()
-
-    try:
-        capture = cv2.VideoCapture(video_source)
-        capture.set(cv2.CAP_PROP_FRAME_WIDTH, resize_width)
-        capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-    except Exception as exc:
-        st.error(f"Failed to open video source: {exc}")
-        st.stop()
+def _run_rtsp_loop(
+    video_source,
+    model, tracker, alert_manager,
+    *,
+    device, conf_th, nms_iou, correlation_iou,
+    resize_width, target_fps,
+    show_helmets, show_bare,
+) -> None:
+    """cv2-based loop for RTSP / file / local webcam. Only called when cv2 is available."""
+    capture = cv2.VideoCapture(video_source)
+    capture.set(cv2.CAP_PROP_FRAME_WIDTH, resize_width)
+    capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
     if not capture.isOpened():
-        src_label = f"webcam {video_source}" if isinstance(video_source, int) else str(video_source)
-        st.error(f"Unable to open **{src_label}**. On Streamlit Cloud, webcam access is not supported — use an RTSP/HTTP URL or a video file instead.")
-        st.stop()
+        src = f"webcam {video_source}" if isinstance(video_source, int) else str(video_source)
+        st.error(f"Cannot open **{src}**. On Streamlit Cloud, webcam access via OpenCV is not supported — use the **Camera (Browser)** source instead.")
+        return
 
-    frame_placeholder = st.empty()
-    alert_placeholder = st.empty()
-    total_col, helmet_col, no_helmet_col, fps_col = st.columns(4)
-    stop_requested = st.sidebar.button("Stop stream", key="stop_stream")
+    frame_ph = st.empty()
+    alert_ph = st.empty()
+    c1, c2, c3, c4 = st.columns(4)
+    stop_btn = st.sidebar.button("Stop stream", key="stop_stream")
 
     while capture.isOpened() and st.session_state.get("run_detector", True):
         grabbed, frame = capture.read()
         if not grabbed:
-            st.warning("No frame received from the source. Releasing camera...")
+            st.warning("No frame received. Stream ended.")
             break
-
         if frame.shape[1] != resize_width:
             scale = resize_width / frame.shape[1]
-            new_height = int(frame.shape[0] * scale)
-            frame = cv2.resize(frame, (resize_width, new_height))
+            frame = cv2.resize(frame, (resize_width, int(frame.shape[0] * scale)))
 
-        start_time = time.perf_counter()
-        (
-            people,
-            helmets,
-            bare,
-            stats,
-            alerts,
-        ) = process_frame(
-            frame,
-            model,
-            tracker,
-            alert_manager,
-            device=device,
-            conf=conf_th,
-            iou=nms_iou,
-            correlation_iou=correlation_iou,
+        t0 = time.perf_counter()
+        frame_rgb = frame[:, :, ::-1]  # BGR→RGB for PIL
+        pil_frame = Image.fromarray(frame_rgb)
+        people, helmets, bare, stats, alerts = process_frame(
+            frame, model, tracker, alert_manager,
+            device=device, conf=conf_th, iou=nms_iou, correlation_iou=correlation_iou,
         )
-        frame_time = time.perf_counter() - start_time
-        stats.fps = 1.0 / max(frame_time, 1e-6)
+        stats.fps = 1.0 / max(time.perf_counter() - t0, 1e-6)
 
-        annotated = draw_analytics(
-            frame,
-            people,
-            helmets,
-            bare,
-            stats,
-            show_helmets=show_helmets,
-            show_bare=show_bare,
-        )
+        annotated = draw_analytics_pil(pil_frame, people, helmets, bare, stats,
+                                       show_helmets=show_helmets, show_bare=show_bare)
+        frame_ph.image(annotated, use_container_width=True)
+        c1.metric("People", stats.total_people)
+        c2.metric("With Helmet", stats.with_helmet)
+        c3.metric("Without Helmet", stats.without_helmet)
+        c4.metric("FPS", f"{stats.fps:.1f}")
+        alert_ph.error("\n".join(alerts)) if alerts else alert_ph.empty()
 
-        frame_rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
-        frame_placeholder.image(frame_rgb, channels="RGB")
-
-        total_col.metric("Total People", stats.total_people)
-        helmet_col.metric("With Helmet", stats.with_helmet)
-        no_helmet_col.metric("Without Helmet", stats.without_helmet)
-        fps_col.metric("FPS", f"{stats.fps:.1f}")
-
-        if alerts:
-            alert_placeholder.error("\n".join(alerts))
-        else:
-            alert_placeholder.empty()
-
-        if stop_requested:
+        if stop_btn:
             st.session_state["run_detector"] = False
             break
-
-        delay = max(0.0, (1.0 / target_fps) - frame_time)
-        if delay > 0:
+        delay = max(0.0, 1.0 / target_fps - (time.perf_counter() - t0))
+        if delay:
             time.sleep(delay)
 
     capture.release()
-    cv2.destroyAllWindows()
+
+
+def main_loop() -> None:
+    st.title("CCTV Helmet Detector")
+    st.caption("YOLOv11 (Ultralytics) — Streamlit dashboard")
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    st.sidebar.markdown(f"**Compute:** {device.upper()}")
+
+    weights_path  = st.sidebar.text_input("YOLOv11 weights", DEFAULT_WEIGHTS)
+    conf_th       = st.sidebar.slider("Confidence", 0.1, 0.95, 0.4, 0.05)
+    nms_iou       = st.sidebar.slider("NMS IoU", 0.1, 0.95, 0.5, 0.05)
+    correlation_iou = st.sidebar.slider("Helmet corr. IoU", 0.1, 0.9, 0.3, 0.05)
+    resize_width  = st.sidebar.slider("Inference width (px)", 320, 1280, 640, 40)
+    target_fps    = st.sidebar.slider("FPS cap (RTSP/file)", 5, 30, 15, 5)
+    show_helmets  = st.sidebar.checkbox("Show helmet boxes", value=True)
+    show_bare     = st.sidebar.checkbox("Show no-helmet boxes", value=True)
+
+    source_options = ["Camera (Browser)", "RTSP/HTTP URL", "Video file", "Webcam 0", "Webcam 1"]
+    source_choice  = st.sidebar.selectbox("Video source", source_options)
+
+    # Load model
+    try:
+        model = load_model(weights_path, device)
+    except Exception as exc:
+        st.error(f"Cannot load weights: {exc}")
+        st.stop()
+
+    tracker       = PersonTracker()
+    alert_manager = AlertManager()
+
+    # ── Browser camera path (no cv2 needed) ──────────────────────────────────
+    if source_choice == "Camera (Browser)":
+        run = st.sidebar.checkbox("Run detector", value=False, key="run_detector")
+        if not run:
+            st.info("Select **Camera (Browser)**, allow camera access, then enable **Run detector**.")
+            return
+
+        img_file = st.camera_input("Point camera at workers", key="cam_snap",
+                                   label_visibility="collapsed")
+        if img_file is None:
+            st.info("Waiting for camera frame…")
+            return
+
+        pil_frame = Image.open(img_file).convert("RGB")
+        frame_np  = np.array(pil_frame)
+
+        t0 = time.perf_counter()
+        people, helmets, bare, stats, alerts = process_frame(
+            frame_np, model, tracker, alert_manager,
+            device=device, conf=conf_th, iou=nms_iou, correlation_iou=correlation_iou,
+        )
+        stats.fps = 1.0 / max(time.perf_counter() - t0, 1e-6)
+
+        annotated = draw_analytics_pil(pil_frame, people, helmets, bare, stats,
+                                       show_helmets=show_helmets, show_bare=show_bare)
+        st.image(annotated, use_container_width=True)
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("People",       stats.total_people)
+        c2.metric("With Helmet",  stats.with_helmet)
+        c3.metric("No Helmet",    stats.without_helmet)
+        c4.metric("FPS",          f"{stats.fps:.1f}")
+
+        if alerts:
+            st.error("\n".join(alerts))
+
+        # Auto-rerun for continuous detection
+        time.sleep(0.05)
+        st.rerun()
+        return
+
+    # ── cv2-dependent paths (RTSP / file / local webcam) ─────────────────────
+    if not _CV2_OK:
+        st.error(
+            "OpenCV is not available in this environment. "
+            "Use **Camera (Browser)** source for Streamlit Cloud, "
+            "or run the app locally with OpenCV installed."
+        )
+        return
+
+    run = st.sidebar.checkbox("Run detector", value=False, key="run_detector")
+    if not run:
+        st.info("Enable **Run detector** in the sidebar to start streaming.")
+        return
+
+    if source_choice == "RTSP/HTTP URL":
+        video_source: str | int = st.sidebar.text_input("RTSP or HTTP URL", "rtsp://user:pass@host/stream")
+    elif source_choice == "Video file":
+        video_source = st.sidebar.text_input("Path to video file", "sample.mp4")
+    elif source_choice == "Webcam 0":
+        video_source = 0
+    else:
+        video_source = 1
+
+    _run_rtsp_loop(
+        video_source, model, tracker, alert_manager,
+        device=device, conf_th=conf_th, nms_iou=nms_iou,
+        correlation_iou=correlation_iou, resize_width=resize_width,
+        target_fps=target_fps, show_helmets=show_helmets, show_bare=show_bare,
+    )
 
 
 if __name__ == "__main__":
     main_loop()
-
