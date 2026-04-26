@@ -1,24 +1,84 @@
 import os
+import sys
 import time
 from dataclasses import dataclass
+from types import ModuleType
 from typing import Dict, List, Sequence
 
 import numpy as np
-import streamlit as st
 from PIL import Image, ImageDraw
+
+# ── cv2 shim ──────────────────────────────────────────────────────────────────
+# ultralytics hard-imports cv2 at module level (no try/except).
+# On Python 3.14 the wheel has no pre-built .so and libGL.so.1 is absent,
+# so the real import crashes the app.  We inject a lightweight shim into
+# sys.modules BEFORE ultralytics loads so it gets our PIL-backed stubs instead.
+# The shim covers every cv2 symbol ultralytics touches during LetterBox
+# preprocessing and YOLO inference on numpy arrays.
+try:
+    import cv2 as _real_cv2
+    _CV2_OK = True
+    cv2 = _real_cv2
+except Exception:
+    _CV2_OK = False
+
+    def _resize(src, dsize, interpolation=1, dst=None):
+        h, w = int(dsize[1]), int(dsize[0])
+        return np.array(Image.fromarray(src).resize((w, h)))
+
+    def _copy_make_border(src, top, bottom, left, right, borderType=0, dst=None, value=0):
+        if isinstance(value, (int, float)):
+            value = [value] * (src.shape[2] if src.ndim == 3 else 1)
+        h, w = src.shape[:2]
+        ch = src.shape[2] if src.ndim == 3 else 1
+        out = np.full((h + top + bottom, w + left + right, ch), value, dtype=src.dtype)
+        out[top:top + h, left:left + w] = src
+        return out
+
+    _shim = ModuleType("cv2")
+    _shim.__version__ = "4.8.1.78"
+    _shim.__spec__ = None
+    # ── constants ──────────────────────────────────────────────────────────────
+    for _k, _v in {
+        "INTER_NEAREST": 0, "INTER_LINEAR": 1, "INTER_CUBIC": 2,
+        "INTER_AREA": 3, "INTER_LANCZOS4": 4,
+        "BORDER_CONSTANT": 0, "BORDER_REFLECT": 4,
+        "COLOR_BGR2RGB": 4, "COLOR_RGB2BGR": 4, "COLOR_BGR2GRAY": 6,
+        "COLOR_BGRA2BGR": 3, "COLOR_GRAY2BGR": 8,
+        "CAP_PROP_FRAME_WIDTH": 3, "CAP_PROP_FRAME_HEIGHT": 4,
+        "CAP_PROP_FPS": 5, "CAP_PROP_BUFFERSIZE": 38,
+        "FONT_HERSHEY_SIMPLEX": 0, "LINE_AA": 16,
+        "FILLED": -1,
+    }.items():
+        setattr(_shim, _k, _v)
+    # ── functions ──────────────────────────────────────────────────────────────
+    _shim.resize = _resize
+    _shim.copyMakeBorder = _copy_make_border
+    _shim.cvtColor = lambda src, code, **kw: src          # passthrough; we stay RGB
+    _shim.rectangle = lambda *a, **kw: a[0] if a else None
+    _shim.putText   = lambda *a, **kw: None
+    _shim.addWeighted = lambda s1, a, s2, b, g, **kw: np.clip(s1*a + s2*b + g, 0, 255).astype(np.uint8)
+    _shim.imencode  = lambda ext, img, params=None: (True, np.array([]))
+    _shim.imdecode  = lambda buf, flags: None
+    _shim.destroyAllWindows = lambda: None
+
+    class _VideoCapture:
+        def __init__(self, *a, **kw): pass
+        def isOpened(self): return False
+        def read(self): return False, None
+        def release(self): pass
+        def set(self, *a, **kw): pass
+
+    _shim.VideoCapture = _VideoCapture
+    sys.modules["cv2"] = _shim
+    cv2 = _shim
+
+# ── heavy imports (AFTER cv2 shim is in sys.modules) ─────────────────────────
+import streamlit as st
 import torch
 from ultralytics import YOLO
 
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
-
-# cv2 is optional — only needed for RTSP / file / local webcam sources.
-# The primary path uses st.camera_input() which needs no system OpenCV libs.
-try:
-    import cv2
-    _CV2_OK = True
-except Exception:
-    cv2 = None
-    _CV2_OK = False
 
 TARGET_CLASSES = {"person", "helmet", "no-helmet"}
 DEFAULT_WEIGHTS = os.getenv("YOLO11_WEIGHTS", "yolo11n.pt")
