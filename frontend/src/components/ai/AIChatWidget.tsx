@@ -31,7 +31,7 @@ export const AIChatWidget = () => {
     {
       id: '1',
       role: 'assistant',
-      content: 'Hello! I\'m the FactoryOS Cognitive Core. How can I help you manage your factory today?',
+      content: 'Hello! I\'m the FactoryCOM Cognitive Core. How can I help you manage your factory today?',
       timestamp: new Date(),
     },
   ]);

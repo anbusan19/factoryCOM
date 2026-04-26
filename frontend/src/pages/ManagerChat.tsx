@@ -40,7 +40,7 @@ const INITIAL_MESSAGE: Message = {
   id: 'init',
   role: 'assistant',
   content:
-    "Good day. I'm the FactoryOS Cognitive Core — your factory intelligence assistant.\n\nI have live access to all machine readings, worker assignments, safety alerts, and production data. The Autonomous AI Agent also runs in the background every 60 seconds, monitoring for anomalies and taking corrective actions automatically.\n\nAsk me anything, or click 'Run Agent Now' to trigger an immediate analysis.",
+    "Good day. I'm the FactoryCOM Cognitive Core — your factory intelligence assistant.\n\nI have live access to all machine readings, worker assignments, safety alerts, and production data. The Autonomous AI Agent also runs in the background every 60 seconds, monitoring for anomalies and taking corrective actions automatically.\n\nAsk me anything, or click 'Run Agent Now' to trigger an immediate analysis.",
   timestamp: new Date(),
 };
 

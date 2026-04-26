@@ -11,6 +11,7 @@ import {
   ControlPanel,
   FloorZone,
 } from '@/components/digitaltwin/FactoryFloor';
+import { LatheDigitalTwin } from '@/components/digitaltwin/LatheDigitalTwin';
 import { useApiStore } from '@/store/useApiStore';
 import { useRealtime } from '@/hooks/useRealtime';
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +26,7 @@ import {
   RefreshCw,
   ChevronRight,
   X,
+  Cog,
 } from 'lucide-react';
 
 // Compute a clean grid position for the i-th machine out of total
@@ -51,6 +53,7 @@ const DigitalTwin = () => {
 
   const { machines, fetchMachines, loading } = useApiStore();
   const [selectedMachine, setSelectedMachine] = useState<(typeof machines)[0] | null>(null);
+  const [showLathe, setShowLathe] = useState(false);
 
   useEffect(() => {
     fetchMachines();
@@ -93,6 +96,15 @@ const DigitalTwin = () => {
               <Dot color="#818cf8" label={`${maintenance} Maint.`} />
             </div>
             <Button
+              variant={showLathe ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setShowLathe((v) => !v)}
+              className="gap-1.5 text-xs"
+            >
+              <Cog className={`w-3.5 h-3.5 ${showLathe ? 'animate-spin' : ''}`} />
+              {showLathe ? 'Close Lathe Twin' : 'Lathe Digital Twin'}
+            </Button>
+            <Button
               variant="outline"
               size="sm"
               onClick={() => fetchMachines()}
@@ -105,10 +117,11 @@ const DigitalTwin = () => {
         </div>
 
         {/* ── Main Content ────────────────────────────────────────────────── */}
-        <div className="flex flex-1 overflow-hidden">
+        {/* Unmount canvas entirely when lathe twin is open to prevent Html portal bleed-through */}
+        <div className="flex flex-1 overflow-hidden" style={{ display: showLathe ? 'none' : 'flex' }}>
 
           {/* 3D Canvas */}
-          <div className="flex-1 relative bg-[#080808]">
+          <div className="flex-1 relative bg-[#f2f2f0]">
             <Canvas shadows>
               <PerspectiveCamera makeDefault position={[18, 14, 18]} fov={55} />
               <OrbitControls
@@ -132,10 +145,10 @@ const DigitalTwin = () => {
                 position={[0, -0.01, 0]}
                 cellSize={2}
                 cellThickness={0.4}
-                cellColor="#1a1a1a"
+                cellColor="#cccccc"
                 sectionSize={6}
                 sectionThickness={0.8}
-                sectionColor="#222222"
+                sectionColor="#bbbbbb"
                 fadeDistance={50}
                 fadeStrength={1}
                 infiniteGrid={false}
@@ -144,7 +157,7 @@ const DigitalTwin = () => {
               {/* Floor plane */}
               <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]} receiveShadow>
                 <planeGeometry args={[60, 60]} />
-                <meshStandardMaterial color="#0a0a0a" roughness={0.9} />
+                <meshStandardMaterial color="#efefed" roughness={0.9} />
               </mesh>
 
               {/* Zone overlays */}
@@ -184,7 +197,7 @@ const DigitalTwin = () => {
                 <Machine
                   key={m.id}
                   position={gridPosition(i, machines.length)}
-                  color="#111827"
+                  color="#e8e8e8"
                   status={m.status}
                   machineData={m}
                   isSelected={selectedMachine?.id === m.id}
@@ -197,7 +210,7 @@ const DigitalTwin = () => {
             </Canvas>
 
             {/* ── Live KPI strip overlaid on canvas ───────────────────── */}
-            <div className="absolute bottom-0 left-0 right-0 flex items-center justify-center gap-4 px-6 py-3 bg-black/60 backdrop-blur-sm border-t border-white/5">
+            <div className="absolute bottom-0 left-0 right-0 flex items-center justify-center gap-4 px-6 py-3 bg-white/80 backdrop-blur-sm border-t border-black/8">
               <KpiChip icon={<Activity className="w-3.5 h-3.5 text-green-400" />} label="Avg Efficiency" value={`${avgEff}%`} />
               <KpiChip icon={<Thermometer className="w-3.5 h-3.5 text-amber-400" />} label="Avg Temp" value={`${avgTemp}°C`} />
               <KpiChip icon={<AlertTriangle className="w-3.5 h-3.5 text-red-400" />} label="Faults" value={String(fault)} highlight={fault > 0} />
@@ -207,9 +220,9 @@ const DigitalTwin = () => {
             {/* ── No machines fallback ─────────────────────────────────── */}
             {machines.length === 0 && !loading.machines && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="bg-black/70 rounded-xl px-6 py-4 text-center backdrop-blur-md border border-white/10">
-                  <p className="text-white font-medium">No machines in database</p>
-                  <p className="text-gray-400 text-xs mt-1">Run <code className="text-green-400">npm run seed</code> in the backend</p>
+                <div className="bg-white/90 rounded-xl px-6 py-4 text-center backdrop-blur-md border border-black/10 shadow-md">
+                  <p className="text-gray-900 font-medium">No machines in database</p>
+                  <p className="text-gray-500 text-xs mt-1">Run <code className="text-green-600">npm run seed</code> in the backend</p>
                 </div>
               </div>
             )}
@@ -319,6 +332,8 @@ const DigitalTwin = () => {
           </aside>
         </div>
       </div>
+      {/* Lathe Digital Twin overlay */}
+      {showLathe && <LatheDigitalTwin onClose={() => setShowLathe(false)} />}
     </Layout>
   );
 };
@@ -343,10 +358,10 @@ const KpiChip = ({
   value: string;
   highlight?: boolean;
 }) => (
-  <div className={`flex items-center gap-2 px-4 py-2 rounded-lg ${highlight ? 'bg-red-500/15 border border-red-500/30' : 'bg-white/5 border border-white/10'}`}>
+  <div className={`flex items-center gap-2 px-4 py-2 rounded-lg ${highlight ? 'bg-red-50 border border-red-200' : 'bg-white border border-gray-200 shadow-sm'}`}>
     {icon}
-    <span className="text-[11px] text-gray-400">{label}</span>
-    <span className={`text-sm font-bold ${highlight ? 'text-red-400' : 'text-white'}`}>{value}</span>
+    <span className="text-[11px] text-gray-500">{label}</span>
+    <span className={`text-sm font-bold ${highlight ? 'text-red-600' : 'text-gray-900'}`}>{value}</span>
   </div>
 );
 

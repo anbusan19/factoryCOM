@@ -200,7 +200,7 @@ const CCTVTesting = () => {
             <Badge ok={false} label="Live feed streaming" />
           </div>
           <p className="text-xs text-muted-foreground mt-3">
-            These will update automatically once the detection module is integrated with the FactoryOS backend.
+            These will update automatically once the detection module is integrated with the FactoryCOM backend.
           </p>
         </div>
       </div>

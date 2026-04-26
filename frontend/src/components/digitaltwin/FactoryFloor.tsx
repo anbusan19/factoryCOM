@@ -22,7 +22,7 @@ export const ConveyorBelt = ({ position, length }: { position: [number, number, 
   return (
     <group ref={ref} position={position}>
       <Box args={[1, 0.2, length]} position={[0, 0, 0]}>
-        <meshStandardMaterial color="#1a1a1a" />
+        <meshStandardMaterial color="#aaaaaa" />
       </Box>
       {[0, 1, 2, 3, 4].map((i) => (
         <Box key={i} args={[0.6, 0.4, 0.6]} position={[0, 0.4, 0]}>
@@ -82,7 +82,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export const Machine = ({
   position,
-  color = '#111111',
+  color = '#e8e8e8',
   status,
   machineData,
   isSelected,
@@ -128,7 +128,7 @@ export const Machine = ({
 
       {/* Top detail panel */}
       <Box args={[1.8, 0.3, 1.8]} position={[0, 0.9, 0]}>
-        <meshStandardMaterial color="#0a0a0a" />
+        <meshStandardMaterial color="#d0d0d0" />
       </Box>
 
       {/* Status indicator */}
@@ -191,7 +191,7 @@ export const FactoryWall = ({
   size: [number, number, number];
 }) => (
   <Box args={size} position={position}>
-    <meshStandardMaterial color="#0a0a0a" transparent opacity={0.3} side={THREE.DoubleSide} />
+    <meshStandardMaterial color="#c8c8c8" transparent opacity={0.35} side={THREE.DoubleSide} />
   </Box>
 );
 
@@ -202,18 +202,18 @@ export const StorageRack = ({ position }: { position: [number, number, number] }
     {[0, 1, 2].map((level) => (
       <group key={level} position={[0, level * 1, 0]}>
         <Box args={[3, 0.1, 1]}>
-          <meshStandardMaterial color="#1a1a1a" />
+          <meshStandardMaterial color="#b0b0b0" />
         </Box>
         {[0, 1, 2].map((item) => (
           <Box key={item} args={[0.8, 0.8, 0.8]} position={[-1 + item, 0.5, 0]}>
-            <meshStandardMaterial color="#ffffff" />
+            <meshStandardMaterial color="#e0e0e0" />
           </Box>
         ))}
       </group>
     ))}
     {[-1.5, 1.5].map((x, i) => (
       <Box key={i} args={[0.1, 3, 0.1]} position={[x, 1.5, 0.5]}>
-        <meshStandardMaterial color="#1a1a1a" />
+        <meshStandardMaterial color="#999999" />
       </Box>
     ))}
   </group>
@@ -224,7 +224,7 @@ export const StorageRack = ({ position }: { position: [number, number, number] }
 export const ControlPanel = ({ position }: { position: [number, number, number] }) => (
   <group position={position}>
     <Box args={[2, 3, 0.2]}>
-      <meshStandardMaterial color="#0a0a0a" />
+      <meshStandardMaterial color="#d4d4d4" />
     </Box>
     <Box args={[1.6, 1, 0.15]} position={[0, 0.8, 0.18]}>
       <meshStandardMaterial color="#10b981" emissive="#10b981" emissiveIntensity={0.5} />

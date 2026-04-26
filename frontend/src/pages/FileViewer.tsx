@@ -2,8 +2,7 @@ import { useState, useRef, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment } from '@react-three/drei';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Upload, FileText } from 'lucide-react';
+import { Upload, FileText, X, RotateCcw, ZoomIn, Move } from 'lucide-react';
 import { ModelViewer } from '@/components/fileviewer/ModelViewer';
 import { DefectAnalysisPanel } from '@/components/fileviewer/DefectAnalysisPanel';
 import { Layout } from '@/components/layout/Layout';
@@ -21,8 +20,8 @@ const FileViewer = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const fileExtension = file.name.split('.').pop()?.toLowerCase();
-    if (!fileExtension || !['gltf', 'glb', 'stl'].includes(fileExtension)) {
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (!ext || !['gltf', 'glb', 'stl'].includes(ext)) {
       alert('Please upload a GLTF (.gltf, .glb) or STL (.stl) file');
       return;
     }
@@ -30,17 +29,11 @@ const FileViewer = () => {
     const url = URL.createObjectURL(file);
     setModelUrl(url);
     setFileName(file.name);
-    setFileType(fileExtension === 'stl' ? 'stl' : 'gltf');
-  };
-
-  const handleUploadClick = () => {
-    fileInputRef.current?.click();
+    setFileType(ext === 'stl' ? 'stl' : 'gltf');
   };
 
   const clearModel = () => {
-    if (modelUrl) {
-      URL.revokeObjectURL(modelUrl);
-    }
+    if (modelUrl) URL.revokeObjectURL(modelUrl);
     setModelUrl(null);
     setFileName('');
     setFileType(null);
@@ -48,26 +41,33 @@ const FileViewer = () => {
   };
 
   const handleModelLoad = useCallback((object: THREE.Object3D) => {
-    const result = analyzeModel(object);
-    setAnalysis(result);
+    setAnalysis(analyzeModel(object));
   }, []);
 
   return (
     <Layout>
-      <div className="min-h-screen bg-slate-950 p-6">
+      <div className="min-h-screen bg-background p-6">
         <div className="max-w-7xl mx-auto space-y-6">
+
+          {/* Header */}
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-white">3D Model Viewer</h1>
-              <p className="text-slate-400 mt-2">Upload and view GLTF and STL files</p>
+              <h1 className="text-3xl font-bold text-foreground tracking-tight">3D Model Viewer</h1>
+              <p className="text-muted-foreground mt-1 text-sm">
+                Upload and inspect GLTF / STL files
+              </p>
             </div>
-            <div className="flex gap-3">
-              <Button onClick={handleUploadClick} className="bg-white">
-                <Upload className="w-4 h-4 mr-2" />
+            <div className="flex gap-2">
+              <Button
+                onClick={() => fileInputRef.current?.click()}
+                className="gap-2"
+              >
+                <Upload className="w-4 h-4" />
                 Upload Model
               </Button>
               {modelUrl && (
-                <Button onClick={clearModel} variant="outline">
+                <Button onClick={clearModel} variant="outline" className="gap-2">
+                  <X className="w-4 h-4" />
                   Clear
                 </Button>
               )}
@@ -82,60 +82,78 @@ const FileViewer = () => {
             className="hidden"
           />
 
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
+
+            {/* 3D Canvas */}
             <div className="lg:col-span-3">
-              <Card className="glass border-slate-700 h-[600px] overflow-hidden">
+              <div className="rounded-xl border border-border bg-[#f2f2f0] h-[600px] overflow-hidden relative">
                 {modelUrl ? (
                   <Canvas camera={{ position: [5, 5, 5], fov: 50 }}>
-                    <ambientLight intensity={0.5} />
-                    <directionalLight position={[10, 10, 5]} intensity={1} />
+                    <ambientLight intensity={0.6} />
+                    <directionalLight position={[10, 10, 5]} intensity={1.2} />
                     <ModelViewer url={modelUrl} type={fileType!} onModelLoad={handleModelLoad} />
                     <OrbitControls enablePan enableZoom enableRotate />
                     <Environment preset="studio" />
                   </Canvas>
                 ) : (
                   <div className="flex items-center justify-center h-full">
-                    <div className="text-center">
-                      <FileText className="w-16 h-16 text-slate-500 mx-auto mb-4" />
-                      <p className="text-slate-400 text-lg">No model loaded</p>
-                      <p className="text-slate-500 text-sm mt-2">
-                        Upload a GLTF or STL file to view it here
+                    <div
+                      className="text-center cursor-pointer group"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <div className="w-20 h-20 rounded-2xl bg-white border-2 border-dashed border-gray-300 group-hover:border-gray-400 flex items-center justify-center mx-auto mb-4 transition-colors">
+                        <FileText className="w-9 h-9 text-gray-400 group-hover:text-gray-500 transition-colors" />
+                      </div>
+                      <p className="text-gray-700 font-semibold text-base font-condensed tracking-wide">
+                        No model loaded
+                      </p>
+                      <p className="text-gray-400 text-sm mt-1">
+                        Click to upload a GLTF or STL file
                       </p>
                     </div>
                   </div>
                 )}
-              </Card>
+
+                {/* Canvas filename badge */}
+                {modelUrl && fileName && (
+                  <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm border border-gray-200 rounded-lg px-3 py-1.5 flex items-center gap-2 shadow-sm">
+                    <FileText className="w-3.5 h-3.5 text-gray-500" />
+                    <span className="text-xs font-mono text-gray-700 max-w-[200px] truncate">{fileName}</span>
+                  </div>
+                )}
+              </div>
             </div>
 
+            {/* Right panel */}
             <div className="space-y-4">
               <DefectAnalysisPanel analysis={analysis} />
-              
-              <Card className="glass border-slate-700 p-4">
-                <h3 className="text-white font-semibold mb-3">File Info</h3>
+
+              {/* File Info */}
+              <div className="rounded-xl border border-border bg-card p-4">
+                <h3 className="text-sm font-semibold text-foreground mb-3 font-condensed tracking-wide uppercase">
+                  File Info
+                </h3>
                 {fileName ? (
-                  <div className="space-y-2">
-                    <div>
-                      <span className="text-slate-400 text-sm">Name:</span>
-                      <p className="text-white text-sm break-all">{fileName}</p>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 text-sm">Type:</span>
-                      <p className="text-white text-sm uppercase">{fileType}</p>
-                    </div>
+                  <div className="space-y-2.5">
+                    <InfoRow label="Name" value={fileName} mono />
+                    <InfoRow label="Type" value={fileType?.toUpperCase() ?? '—'} mono />
                   </div>
                 ) : (
-                  <p className="text-slate-500 text-sm">No file selected</p>
+                  <p className="text-muted-foreground text-sm">No file selected</p>
                 )}
-              </Card>
+              </div>
 
-              <Card className="glass border-slate-700 p-4">
-                <h3 className="text-white font-semibold mb-3">Controls</h3>
-                <div className="space-y-2 text-sm text-slate-400">
-                  <p><strong>Left Click + Drag:</strong> Rotate</p>
-                  <p><strong>Right Click + Drag:</strong> Pan</p>
-                  <p><strong>Scroll:</strong> Zoom</p>
+              {/* Controls */}
+              <div className="rounded-xl border border-border bg-card p-4">
+                <h3 className="text-sm font-semibold text-foreground mb-3 font-condensed tracking-wide uppercase">
+                  Controls
+                </h3>
+                <div className="space-y-2">
+                  <ControlRow icon={<RotateCcw className="w-3.5 h-3.5" />} label="Left drag" action="Rotate" />
+                  <ControlRow icon={<Move className="w-3.5 h-3.5" />} label="Right drag" action="Pan" />
+                  <ControlRow icon={<ZoomIn className="w-3.5 h-3.5" />} label="Scroll" action="Zoom" />
                 </div>
-              </Card>
+              </div>
             </div>
           </div>
         </div>
@@ -143,5 +161,30 @@ const FileViewer = () => {
     </Layout>
   );
 };
+
+// ── Small helpers ──────────────────────────────────────────────────────────
+
+const InfoRow = ({ label, value, mono }: { label: string; value: string; mono?: boolean }) => (
+  <div>
+    <span className="text-[11px] text-muted-foreground uppercase tracking-wider">{label}</span>
+    <p className={`text-sm text-foreground mt-0.5 break-all ${mono ? 'font-mono' : ''}`}>{value}</p>
+  </div>
+);
+
+const ControlRow = ({
+  icon,
+  label,
+  action,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  action: string;
+}) => (
+  <div className="flex items-center gap-2.5 text-sm">
+    <span className="text-muted-foreground">{icon}</span>
+    <span className="text-muted-foreground">{label}:</span>
+    <span className="font-medium text-foreground">{action}</span>
+  </div>
+);
 
 export default FileViewer;
