@@ -16,6 +16,7 @@ import Warehouse from "./pages/Warehouse";
 import ManagerChat from "./pages/ManagerChat";
 import CCTVDashboard from "./pages/CCTVDashboard";
 import CCTVTesting from "./pages/CCTVTesting";
+import Suppliers from "./pages/Suppliers";
 
 const queryClient = new QueryClient();
 
@@ -38,6 +39,7 @@ const App = () => (
           <Route path="/manager-chat" element={<ManagerChat />} />
           <Route path="/cctv" element={<CCTVDashboard />} />
           <Route path="/cctv-testing" element={<CCTVTesting />} />
+          <Route path="/suppliers" element={<Suppliers />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

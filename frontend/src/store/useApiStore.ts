@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { machineApi, workerApi, orderApi, alertApi, productionApi } from '@/lib/api';
+import { machineApi, workerApi, orderApi, alertApi, productionApi, supplierApi } from '@/lib/api';
 
 export type MachineStatus = 'active' | 'idle' | 'fault' | 'maintenance';
 export type WorkerStatus = 'active' | 'on-break' | 'reassigned';
@@ -63,6 +63,18 @@ export interface FactoryOrder {
   paymentStatus?: 'paid' | 'pending' | 'not-paid';
 }
 
+export interface Supplier {
+  id: string;
+  name: string;
+  contactName: string;
+  email: string;
+  phone: string;
+  category: 'Raw Material' | 'Components' | 'Tools' | 'Services' | 'Packaging';
+  rating: number;
+  address: string;
+  status: 'active' | 'inactive';
+}
+
 export interface AiAction {
   id: string;
   summary: string;
@@ -82,7 +94,8 @@ interface ApiState {
   factoryOrders: FactoryOrder[];
   productionData: any[];
   aiActions: AiAction[];
-  
+  suppliers: Supplier[];
+
   // Loading states
   loading: {
     machines: boolean;
@@ -92,6 +105,7 @@ interface ApiState {
     procurement: boolean;
     factory: boolean;
     production: boolean;
+    suppliers: boolean;
   };
   
   // Error states
@@ -103,6 +117,7 @@ interface ApiState {
     procurement: string | null;
     factory: string | null;
     production: string | null;
+    suppliers: string | null;
   };
   
   // Actions
@@ -120,6 +135,20 @@ interface ApiState {
   updateWorker: (id: string, updates: Partial<Worker>) => Promise<void>;
   updateProcurementOrder: (id: string, updates: Partial<ProcurementOrder>) => Promise<void>;
   updateFactoryOrder: (id: string, updates: Partial<FactoryOrder>) => Promise<void>;
+
+  // Create actions
+  createWorker: (data: Omit<Worker, 'id'>) => Promise<Worker>;
+  createProcurementOrder: (data: Omit<ProcurementOrder, 'id'>) => Promise<ProcurementOrder>;
+
+  // Delete actions
+  deleteWorker: (id: string) => Promise<void>;
+  deleteProcurementOrder: (id: string) => Promise<void>;
+
+  // Supplier actions
+  fetchSuppliers: () => Promise<void>;
+  createSupplier: (data: Omit<Supplier, 'id'>) => Promise<Supplier>;
+  updateSupplier: (id: string, updates: Partial<Supplier>) => Promise<void>;
+  deleteSupplier: (id: string) => Promise<void>;
 }
 
 export const useApiStore = create<ApiState>((set, get) => ({
@@ -132,7 +161,8 @@ export const useApiStore = create<ApiState>((set, get) => ({
   factoryOrders: [],
   productionData: [],
   aiActions: [],
-  
+  suppliers: [],
+
   // Initial loading states
   loading: {
     machines: false,
@@ -142,8 +172,9 @@ export const useApiStore = create<ApiState>((set, get) => ({
     procurement: false,
     factory: false,
     production: false,
+    suppliers: false,
   },
-  
+
   // Initial error states
   errors: {
     machines: null,
@@ -153,6 +184,7 @@ export const useApiStore = create<ApiState>((set, get) => ({
     procurement: null,
     factory: null,
     production: null,
+    suppliers: null,
   },
   
   // Fetch functions
@@ -303,5 +335,56 @@ export const useApiStore = create<ApiState>((set, get) => ({
     } catch (error) {
       console.error('Failed to update factory order:', error);
     }
+  },
+
+  createWorker: async (data) => {
+    const id = `W-${Date.now()}`;
+    const worker = await workerApi.create({ ...data, id });
+    set(state => ({ workers: [worker, ...state.workers] }));
+    return worker;
+  },
+
+  createProcurementOrder: async (data) => {
+    const id = `PO-${Date.now()}`;
+    const order = await orderApi.createProcurementOrder({ ...data, id });
+    set(state => ({ procurementOrders: [order, ...state.procurementOrders] }));
+    return order;
+  },
+
+  deleteWorker: async (id) => {
+    await workerApi.delete(id);
+    set(state => ({ workers: state.workers.filter(w => w.id !== id) }));
+  },
+
+  deleteProcurementOrder: async (id) => {
+    await orderApi.deleteProcurementOrder(id);
+    set(state => ({ procurementOrders: state.procurementOrders.filter(o => o.id !== id) }));
+  },
+
+  fetchSuppliers: async () => {
+    set(state => ({ loading: { ...state.loading, suppliers: true } }));
+    try {
+      const suppliers = await supplierApi.getAll();
+      set(state => ({ suppliers, loading: { ...state.loading, suppliers: false }, errors: { ...state.errors, suppliers: null } }));
+    } catch (error) {
+      set(state => ({ loading: { ...state.loading, suppliers: false }, errors: { ...state.errors, suppliers: error instanceof Error ? error.message : 'Failed to fetch suppliers' } }));
+    }
+  },
+
+  createSupplier: async (data) => {
+    const id = `SUP-${Date.now()}`;
+    const supplier = await supplierApi.create({ ...data, id });
+    set(state => ({ suppliers: [supplier, ...state.suppliers] }));
+    return supplier;
+  },
+
+  updateSupplier: async (id, updates) => {
+    await supplierApi.update(id, updates);
+    set(state => ({ suppliers: state.suppliers.map(s => s.id === id ? { ...s, ...updates } : s) }));
+  },
+
+  deleteSupplier: async (id) => {
+    await supplierApi.delete(id);
+    set(state => ({ suppliers: state.suppliers.filter(s => s.id !== id) }));
   },
 }));
