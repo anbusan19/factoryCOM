@@ -28,38 +28,47 @@ function buildContextSummary(factoryContext) {
     const avgTemp = (m.reduce((s, x) => s + (x.temperature ?? 0), 0) / m.length).toFixed(1);
     const avgEff  = Math.round(m.reduce((s, x) => s + (x.efficiency ?? 0), 0) / m.length);
 
-    lines.push(`Machines (${m.length} total): ${active} active, ${idle} idle, ${fault} fault, ${maint} maintenance`);
-    lines.push(`Average temperature: ${avgTemp}°C | Average efficiency: ${avgEff}%`);
-
-    // List only machines with problems
-    const problem = m.filter(x => x.status === 'fault' || x.status === 'maintenance');
-    if (problem.length) {
-      lines.push('Machines needing attention: ' + problem.map(x =>
-        `${x.name} [${x.status}, ${x.temperature ?? '?'}°C, eff ${x.efficiency ?? '?'}%]`
-      ).join('; '));
-    }
+    lines.push(`\nMACHINES (${m.length} total): ${active} active, ${idle} idle, ${fault} fault, ${maint} maintenance | avg temp ${avgTemp}°C | avg efficiency ${avgEff}%`);
+    lines.push('Machine details:');
+    m.forEach(x => {
+      lines.push(`  - ${x.name} (${x.id}): status=${x.status}, temp=${x.temperature ?? '?'}°C, efficiency=${x.efficiency ?? '?'}%, worker=${x.workerId ?? 'unassigned'}`);
+    });
   }
 
   if (factoryContext.workers?.length) {
     const w = factoryContext.workers;
-    const active = w.filter(x => x.status === 'active').length;
-    lines.push(`Workers (${w.length} total): ${active} active on shift`);
+    const active   = w.filter(x => x.status === 'active').length;
+    const onBreak  = w.filter(x => x.status === 'on-break').length;
+    const reassigned = w.filter(x => x.status === 'reassigned').length;
+
+    lines.push(`\nWORKERS (${w.length} total): ${active} active, ${onBreak} on break, ${reassigned} reassigned`);
+    lines.push('Worker details:');
+    w.forEach(x => {
+      lines.push(`  - ${x.name} (${x.id}): status=${x.status}, shift=${x.shift}, machine=${x.machineId ?? 'unassigned'}, riskIndex=${x.riskIndex}`);
+    });
   }
 
   if (factoryContext.orders?.length) {
     const o = factoryContext.orders;
     const completed = o.filter(x => x.status === 'completed' || x.status === 'delivered').length;
     const pending   = o.filter(x => !['completed', 'delivered', 'cancelled'].includes(x.status)).length;
-    lines.push(`Orders (${o.length} total): ${pending} pending, ${completed} completed`);
+
+    lines.push(`\nORDERS (${o.length} total): ${pending} pending/active, ${completed} completed`);
+    lines.push('Order details:');
+    o.slice(0, 15).forEach(x => {
+      const name = x.factoryName || x.supplier || 'Unknown';
+      const val  = x.totalPrice != null ? `₹${x.totalPrice}` : (x.quantity ? `qty ${x.quantity}` : '');
+      lines.push(`  - ${x.id}: ${name} | status=${x.status} | ${val} | payment=${x.paymentStatus ?? x.status === 'delivered' ? 'paid' : 'pending'}`);
+    });
   }
 
   if (factoryContext.alerts?.length) {
     const a = factoryContext.alerts;
     const critical = a.filter(x => x.type === 'critical' || x.severity === 'critical').length;
-    lines.push(`Safety alerts (${a.length} total): ${critical} critical`);
-    // Include the 3 most recent alert messages
-    const recent = a.slice(0, 3).map(x => x.message).join(' | ');
-    if (recent) lines.push(`Recent alerts: ${recent}`);
+    lines.push(`\nSAFETY ALERTS (${a.length} total): ${critical} critical`);
+    a.slice(0, 8).forEach(x => {
+      lines.push(`  - [${x.type ?? x.severity ?? 'info'}] ${x.message} (machine: ${x.machineId ?? 'N/A'})`);
+    });
   }
 
   return lines.join('\n');
