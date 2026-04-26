@@ -73,6 +73,7 @@ export const orderApi = {
     method: 'PUT',
     body: JSON.stringify(data),
   }),
+  deleteProcurementOrder: (id: string) => apiCall<any>(`/orders/procurement/${id}`, { method: 'DELETE' }),
 };
 
 // Alert API
@@ -121,6 +122,15 @@ export const qualityControlApi = {
     });
   },
   checkHealth: () => apiCall<{ status: string; checks: any; timestamp: string }>('/quality-control/health'),
+};
+
+// Supplier API
+export const supplierApi = {
+  getAll: () => apiCall<any[]>('/suppliers'),
+  getById: (id: string) => apiCall<any>(`/suppliers/${id}`),
+  create: (data: any) => apiCall<any>('/suppliers', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id: string, data: any) => apiCall<any>(`/suppliers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (id: string) => apiCall<any>(`/suppliers/${id}`, { method: 'DELETE' }),
 };
 
 // Health check

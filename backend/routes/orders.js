@@ -106,4 +106,15 @@ router.put('/factory/:id', async (req, res) => {
   }
 });
 
+// DELETE procurement order
+router.delete('/procurement/:id', async (req, res) => {
+  try {
+    const order = await ProcurementOrder.findOneAndDelete({ id: req.params.id });
+    if (!order) return res.status(404).json({ message: 'Procurement order not found' });
+    res.json({ message: 'Procurement order deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 export default router;

@@ -12,6 +12,7 @@ import {
   Users,
   FileSearch,
   ShieldCheck,
+  Building2,
   MoreHorizontal,
 } from 'lucide-react';
 
@@ -27,6 +28,7 @@ const PRIMARY = [
 // Secondary nav — lives in "More" dropdown
 const SECONDARY = [
   { to: '/procurement',    label: 'Procurement',    icon: ShoppingCart },
+  { to: '/suppliers',      label: 'Suppliers',      icon: Building2 },
   { to: '/file-viewer',    label: 'File Viewer',    icon: FileSearch },
   { to: '/quality-control',label: 'Quality Control',icon: ShieldCheck },
   { to: '/manager-chat',   label: 'Manager AI',     icon: Bot },

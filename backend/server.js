@@ -16,6 +16,7 @@ import qualityControlRoutes from './routes/qualityControl.js';
 import aiRoutes from './routes/ai.js';
 import sensorRoutes from './routes/sensors.js';
 import aiAgentRoutes, { runAgentAnalysis } from './routes/aiAgent.js';
+import supplierRoutes from './routes/suppliers.js';
 
 dotenv.config();
 
@@ -44,6 +45,7 @@ app.use('/api/quality-control', qualityControlRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/sensors', sensorRoutes);
 app.use('/api/ai-agent', aiAgentRoutes);
+app.use('/api/suppliers', supplierRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
