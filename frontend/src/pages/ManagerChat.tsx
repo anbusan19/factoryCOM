@@ -15,6 +15,98 @@ import {
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 
+// ── Inline markdown renderer (no external dep) ────────────────────────────────
+function MarkdownMessage({ content, dim }: { content: string; dim?: boolean }) {
+  const baseText = dim ? 'text-muted-foreground' : 'text-foreground';
+
+  const renderInline = (text: string): React.ReactNode[] => {
+    // Split on **bold** patterns
+    const parts = text.split(/(\*\*[^*]+\*\*)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong>;
+      }
+      return <span key={i}>{part}</span>;
+    });
+  };
+
+  const lines = content.split('\n');
+  const nodes: React.ReactNode[] = [];
+  let listBuffer: string[] = [];
+
+  const flushList = (key: string) => {
+    if (!listBuffer.length) return;
+    nodes.push(
+      <ul key={key} className="my-1 space-y-0.5 pl-4">
+        {listBuffer.map((item, i) => (
+          <li key={i} className="flex items-start gap-1.5 text-sm">
+            <span className="mt-1.5 w-1 h-1 rounded-full bg-current shrink-0 opacity-60" />
+            <span>{renderInline(item)}</span>
+          </li>
+        ))}
+      </ul>
+    );
+    listBuffer = [];
+  };
+
+  lines.forEach((line, idx) => {
+    const key = String(idx);
+
+    // H3
+    if (line.startsWith('### ')) {
+      flushList(`list-${idx}`);
+      nodes.push(
+        <p key={key} className="text-[13px] font-bold uppercase tracking-wide mt-3 mb-1 opacity-70">
+          {renderInline(line.slice(4))}
+        </p>
+      );
+      return;
+    }
+    // H2
+    if (line.startsWith('## ')) {
+      flushList(`list-${idx}`);
+      nodes.push(
+        <p key={key} className="text-sm font-bold mt-3 mb-1">
+          {renderInline(line.slice(3))}
+        </p>
+      );
+      return;
+    }
+    // Horizontal rule
+    if (/^[-*]{3,}$/.test(line.trim())) {
+      flushList(`list-${idx}`);
+      nodes.push(<hr key={key} className="my-2 border-current opacity-10" />);
+      return;
+    }
+    // Bullet list item
+    if (line.startsWith('- ') || line.startsWith('* ')) {
+      listBuffer.push(line.slice(2));
+      return;
+    }
+    // Numbered list
+    if (/^\d+\.\s/.test(line)) {
+      listBuffer.push(line.replace(/^\d+\.\s/, ''));
+      return;
+    }
+    // Empty line — flush list, add spacing
+    if (line.trim() === '') {
+      flushList(`list-${idx}`);
+      nodes.push(<div key={key} className="h-1" />);
+      return;
+    }
+    // Regular paragraph
+    flushList(`list-${idx}`);
+    nodes.push(
+      <p key={key} className={`text-sm leading-relaxed ${baseText}`}>
+        {renderInline(line)}
+      </p>
+    );
+  });
+
+  flushList('final');
+  return <div className="space-y-0.5">{nodes}</div>;
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant' | 'agent';
@@ -352,8 +444,8 @@ const ManagerChat = () => {
                             </Badge>
                           </div>
                         )}
-                        <p className="text-sm whitespace-pre-wrap text-foreground leading-relaxed">{msg.content}</p>
-                        <p className="text-[10px] mt-1.5 text-muted-foreground">
+                        <MarkdownMessage content={msg.content} />
+                        <p className="text-[10px] mt-2 text-muted-foreground">
                           {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · autonomous
                         </p>
                       </div>
@@ -368,13 +460,16 @@ const ManagerChat = () => {
                         <Bot className="w-4 h-4 text-primary-foreground" />
                       </div>
                     )}
-                    <div className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                    <div className={`max-w-[75%] rounded-2xl px-4 py-3 ${
                       msg.role === 'user'
                         ? 'bg-primary text-primary-foreground rounded-br-sm'
                         : 'bg-muted rounded-bl-sm'
                     }`}>
-                      <p className="whitespace-pre-wrap">{msg.content}</p>
-                      <p className={`text-[10px] mt-1.5 ${msg.role === 'user' ? 'text-primary-foreground/60' : 'text-muted-foreground'}`}>
+                      {msg.role === 'user'
+                        ? <p className="text-sm leading-relaxed">{msg.content}</p>
+                        : <MarkdownMessage content={msg.content} />
+                      }
+                      <p className={`text-[10px] mt-2 ${msg.role === 'user' ? 'text-primary-foreground/60' : 'text-muted-foreground'}`}>
                         {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>
