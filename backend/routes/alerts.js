@@ -1,6 +1,7 @@
 import express from 'express';
 import SafetyAlert from '../models/SafetyAlert.js';
 import SystemEvent from '../models/SystemEvent.js';
+import { sendAlertPush } from './notifications.js';
 
 const router = express.Router();
 
@@ -29,6 +30,7 @@ router.post('/safety', async (req, res) => {
   try {
     const alert = new SafetyAlert(req.body);
     await alert.save();
+    sendAlertPush(alert).catch(() => {}); // fire-and-forget
     res.status(201).json(alert);
   } catch (error) {
     res.status(400).json({ message: error.message });

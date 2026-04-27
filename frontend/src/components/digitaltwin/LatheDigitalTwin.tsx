@@ -24,6 +24,10 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
 // How long (ms) after the last ESP32 socket event before we consider it offline
 const ESP32_STALE_MS = 90_000;
 
+// Grace window: keep the machine "running" this long after the last known-active reading.
+// 20 s = 4× the ESP32 post interval, so several missed poll cycles won't flash the overlay.
+const ACTIVE_GRACE_MS = 20_000;
+
 interface SensorReading {
   id: string;
   name: string;
@@ -41,7 +45,22 @@ interface SocketSensorItem {
   efficiency?: number;
   status?: string;
   source?: string; // 'esp32' | 'hardware' | 'simulation'
+  vibration?: number | boolean | null;
   timestamp?: string;
+}
+
+// The ESP32 sketch sends status='fault' whenever the SW-420 vibration sensor fires.
+// A running lathe always vibrates — only trust 'fault' if temperature is genuinely high.
+const FAULT_TEMP_THRESHOLD = 75; // °C
+
+function resolveEsp32Status(
+  status: string | undefined,
+  temperature: number | undefined,
+): string {
+  if (status === 'fault' && (temperature === undefined || temperature < FAULT_TEMP_THRESHOLD)) {
+    return 'active';
+  }
+  return status ?? 'idle';
 }
 
 // ── Lathe 3D Model ──────────────────────────────────────────────────────────
@@ -121,18 +140,48 @@ export const LatheDigitalTwin = ({ onClose }: LatheDigitalTwinProps) => {
   // isLive = true only when we have received a socket event with source 'esp32' or 'hardware'
   const [isLive, setIsLive] = useState(false);
   const [fetching, setFetching] = useState(true);
+  // waiting = true for the first 10 s after mount while we check if ESP32 is sending data
+  const [waiting, setWaiting] = useState(true);
   const [lastSeen, setLastSeen] = useState<Date | null>(null);
   const esp32LastAt = useRef<number>(0);
   const staleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Timestamp of the last reading (REST or socket) that reported status === 'active'
+  const lastActiveAt = useRef<number>(0);
+  // Machine ID learned from the first ESP32 socket event — REST poll locks to this
+  const esp32MachineId = useRef<string | null>(null);
 
-  // Poll REST for display values (temperature, efficiency, name, id)
+  // Poll REST for display values (temperature, efficiency, name, id).
+  // Once we know which machine the ESP32 belongs to, only update from that machine
+  // so the REST poll never overwrites socket data with a different machine's values.
   const fetchStatus = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE_URL}/sensors/status`);
       if (!res.ok) return;
       const list: SensorReading[] = await res.json();
       if (list.length === 0) return;
-      setSensorData(list[0]);
+
+      const target = esp32MachineId.current
+        ? (list.find(m => m.id === esp32MachineId.current) ?? list[0])
+        : list[0];
+
+      // The backend simulation loop overwrites the DB with drifted fake values every 5 s.
+      // When the ESP32 socket is actively sending (seen within the last 10 s), skip
+      // temperature and status from REST — the socket is the source of truth.
+      // Fall back to REST only when the ESP32 has gone silent.
+      const esp32Active = Date.now() - esp32LastAt.current < 10_000;
+
+      if (esp32Active) {
+        // Keep live sensor values; only sync identity fields that don't change.
+        setSensorData(prev =>
+          prev
+            ? { ...prev, id: target.id, name: target.name }
+            : { ...target, status: resolveEsp32Status(target.status, target.temperature) },
+        );
+      } else {
+        const displayStatus = resolveEsp32Status(target.status, target.temperature);
+        setSensorData({ ...target, status: displayStatus });
+        if (displayStatus === 'active') lastActiveAt.current = Date.now();
+      }
     } catch {
       // ignore poll errors
     } finally {
@@ -159,15 +208,23 @@ export const LatheDigitalTwin = ({ onClose }: LatheDigitalTwinProps) => {
         (item) => item.source === 'esp32' || item.source === 'hardware',
       );
       if (esp32Item) {
+        // Lock the REST poll to this machine ID so both sources always agree
+        if (esp32Item.machineId && !esp32MachineId.current) {
+          esp32MachineId.current = esp32Item.machineId;
+        }
         markEsp32Live(new Date());
-        // Merge live values into display data immediately
+        const displayStatus = resolveEsp32Status(
+          esp32Item.status,
+          esp32Item.temperature,
+        );
+        if (displayStatus === 'active') lastActiveAt.current = Date.now();
         setSensorData((prev) =>
           prev
             ? {
                 ...prev,
                 temperature: esp32Item.temperature ?? prev.temperature,
-                efficiency: esp32Item.efficiency ?? prev.efficiency,
-                status: esp32Item.status ?? prev.status,
+                efficiency:  esp32Item.efficiency  ?? prev.efficiency,
+                status:      displayStatus,
               }
             : prev,
         );
@@ -187,7 +244,15 @@ export const LatheDigitalTwin = ({ onClose }: LatheDigitalTwinProps) => {
     return () => clearInterval(id);
   }, [fetchStatus]);
 
-  const isRunning = isLive && sensorData?.status === 'active';
+  // 20-second grace period before treating absence of data as "offline"
+  useEffect(() => {
+    const id = setTimeout(() => setWaiting(false), 20_000);
+    return () => clearTimeout(id);
+  }, []);
+
+  // Machine is "running" if we've seen an active reading within the grace window.
+  // Deliberately does NOT check current status so a single stale poll can't flash the overlay.
+  const isRunning = lastActiveAt.current > 0 && Date.now() - lastActiveAt.current < ACTIVE_GRACE_MS;
   const statusColor = sensorData ? (STATUS_COLOR[sensorData.status] ?? '#888888') : '#888888';
 
   return (
@@ -209,6 +274,11 @@ export const LatheDigitalTwin = ({ onClose }: LatheDigitalTwinProps) => {
               <Wifi className="w-3 h-3" />
               <span className="font-medium">ESP32 Live</span>
               <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />
+            </div>
+          ) : waiting ? (
+            <div className="flex items-center gap-1.5 bg-yellow-500/10 border border-yellow-500/25 rounded-full px-3 py-1 text-yellow-500 text-xs">
+              <Radio className="w-3 h-3 animate-pulse" />
+              <span>Checking ESP32…</span>
             </div>
           ) : (
             <div className="flex items-center gap-1.5 bg-gray-800 border border-white/[0.06] rounded-full px-3 py-1 text-gray-500 text-xs">
@@ -291,7 +361,7 @@ export const LatheDigitalTwin = ({ onClose }: LatheDigitalTwinProps) => {
           </Canvas>
 
           {/* Not Running overlay */}
-          {!isRunning && !fetching && (
+          {!isRunning && !fetching && !waiting && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="bg-white/90 rounded-2xl px-8 py-7 text-center backdrop-blur-lg border border-black/[0.08] shadow-lg max-w-sm">
                 <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4 border border-gray-200">
@@ -327,7 +397,7 @@ export const LatheDigitalTwin = ({ onClose }: LatheDigitalTwinProps) => {
           <div className="px-5 py-4 border-b border-black/[0.08]">
             <p className="text-sm font-semibold text-gray-900">Sensor Vitals</p>
             <p className="text-[11px] text-gray-500 mt-0.5">
-              {isLive ? 'Polling ESP32 · every 3 s' : 'Waiting for live data…'}
+              {isLive ? 'Polling ESP32 · every 5 s' : waiting ? 'Checking for ESP32 data…' : 'No live data received'}
             </p>
           </div>
 
@@ -389,7 +459,7 @@ export const LatheDigitalTwin = ({ onClose }: LatheDigitalTwinProps) => {
                     : sensorData.temperature > 60
                     ? 'Elevated'
                     : 'Normal range'
-                  : 'No data'
+                  : waiting ? 'Waiting for data…' : 'No data yet'
               }
               barPct={sensorData?.temperature !== undefined ? Math.min(sensorData.temperature / 100, 1) : 0}
               barColor={
@@ -401,7 +471,7 @@ export const LatheDigitalTwin = ({ onClose }: LatheDigitalTwinProps) => {
                     : '#22c55e'
                   : '#1f2937'
               }
-              dim={!isLive}
+              dim={!isRunning}
             />
 
             {/* Efficiency */}
@@ -416,11 +486,11 @@ export const LatheDigitalTwin = ({ onClose }: LatheDigitalTwinProps) => {
                     : sensorData.efficiency >= 50
                     ? 'Reduced output'
                     : 'Low — inspect machine'
-                  : 'No data'
+                  : waiting ? 'Waiting for data…' : 'No data yet'
               }
               barPct={sensorData?.efficiency !== undefined ? Math.min(sensorData.efficiency / 100, 1) : 0}
               barColor="#3b82f6"
-              dim={!isLive}
+              dim={!isRunning}
             />
 
             {/* Signal */}
@@ -461,7 +531,7 @@ export const LatheDigitalTwin = ({ onClose }: LatheDigitalTwinProps) => {
             )}
 
             {/* No-data hint */}
-            {!isLive && !fetching && (
+            {!isLive && !fetching && !waiting && (
               <div className="bg-gray-50 border border-gray-200 rounded-xl p-3.5 flex items-start gap-2.5">
                 <Droplets className="w-4 h-4 text-gray-400 flex-shrink-0 mt-px" />
                 <div>

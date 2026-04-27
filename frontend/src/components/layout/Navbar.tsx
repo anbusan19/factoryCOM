@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Building2,
   MoreHorizontal,
+  BriefcaseBusiness,
 } from 'lucide-react';
 
 // Primary nav — always visible
@@ -31,6 +32,7 @@ const SECONDARY = [
   { to: '/suppliers',      label: 'Suppliers',      icon: Building2 },
   { to: '/file-viewer',    label: 'File Viewer',    icon: FileSearch },
   { to: '/quality-control',label: 'Quality Control',icon: ShieldCheck },
+  { to: '/manager',        label: 'Manager',        icon: BriefcaseBusiness },
   { to: '/manager-chat',   label: 'Manager AI',     icon: Bot },
   { to: '/cctv',           label: 'CCTV',           icon: Cctv },
   { to: '/cctv-testing',   label: 'CCTV Testing',   icon: FlaskConical },

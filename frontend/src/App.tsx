@@ -17,6 +17,8 @@ import ManagerChat from "./pages/ManagerChat";
 import CCTVDashboard from "./pages/CCTVDashboard";
 import CCTVTesting from "./pages/CCTVTesting";
 import Suppliers from "./pages/Suppliers";
+import { OnnxCCTVDetector } from "./components/cctv-onnx/OnnxCCTVDetector";
+import ManagerPortal from "./pages/ManagerPortal";
 
 const queryClient = new QueryClient();
 
@@ -40,6 +42,8 @@ const App = () => (
           <Route path="/cctv" element={<CCTVDashboard />} />
           <Route path="/cctv-testing" element={<CCTVTesting />} />
           <Route path="/suppliers" element={<Suppliers />} />
+          <Route path="/onnx-test" element={<OnnxCCTVDetector />} />
+          <Route path="/manager" element={<ManagerPortal />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

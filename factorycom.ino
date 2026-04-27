@@ -52,7 +52,8 @@ void loop() {
   doc["temperature"] = temp;
   doc["humidity"]    = humidity;
   doc["vibration"]   = vibration;
-  doc["status"]      = vibration ? "fault" : "active";
+  // A running lathe always vibrates — fault only when temperature exceeds safe threshold
+  doc["status"]      = (temp > 75.0) ? "fault" : "active";
 
   String body;
   serializeJson(doc, body);

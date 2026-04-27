@@ -17,6 +17,7 @@ import aiRoutes from './routes/ai.js';
 import sensorRoutes from './routes/sensors.js';
 import aiAgentRoutes, { runAgentAnalysis } from './routes/aiAgent.js';
 import supplierRoutes from './routes/suppliers.js';
+import notificationRoutes from './routes/notifications.js';
 
 dotenv.config();
 
@@ -46,6 +47,7 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/sensors', sensorRoutes);
 app.use('/api/ai-agent', aiAgentRoutes);
 app.use('/api/suppliers', supplierRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -80,6 +82,7 @@ app.use('*', (req, res) => {
 // Replace with real hardware data by POSTing to /api/sensors/data instead.
 
 const machineSimState = {};
+const ALERT_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes between alerts per machine
 
 function startSensorSimulation(io) {
   console.log('Sensor simulation started (5s interval)');
@@ -97,6 +100,7 @@ function startSensorSimulation(io) {
           machineSimState[machine.id] = {
             temp: machine.temperature ?? 65,
             efficiency: machine.efficiency ?? 85,
+            lastAlertAt: 0,
           };
         }
 
@@ -115,25 +119,29 @@ function startSensorSimulation(io) {
         const temperature = parseFloat(state.temp.toFixed(1));
         const efficiency = Math.round(state.efficiency);
 
-        // Auto-fault on thermal overrun
+        // Auto-fault on thermal overrun — alert at most once per ALERT_COOLDOWN_MS per machine
         let newStatus = machine.status;
         if (temperature > 88 && machine.status === 'active') {
           newStatus = 'fault';
-          io.emit('safety_alert', {
-            id: `SA-${Date.now()}-${machine.id}`,
-            type: 'critical',
-            severity: 'critical',
-            message: `Thermal overrun: ${machine.name} at ${temperature}°C — switched to fault`,
-            machineId: machine.id,
-            timestamp: new Date().toISOString(),
-          });
-          io.emit('system_event', {
-            id: `SE-${Date.now()}-${machine.id}`,
-            type: 'machine',
-            severity: 'critical',
-            message: `${machine.name} auto-faulted due to temperature (${temperature}°C)`,
-            timestamp: new Date().toISOString(),
-          });
+          const now = Date.now();
+          if (now - state.lastAlertAt > ALERT_COOLDOWN_MS) {
+            state.lastAlertAt = now;
+            io.emit('safety_alert', {
+              id: `SA-${now}-${machine.id}`,
+              type: 'critical',
+              severity: 'critical',
+              message: `Thermal overrun: ${machine.name} at ${temperature}°C — switched to fault`,
+              machineId: machine.id,
+              timestamp: new Date().toISOString(),
+            });
+            io.emit('system_event', {
+              id: `SE-${now}-${machine.id}`,
+              type: 'machine',
+              severity: 'critical',
+              message: `${machine.name} auto-faulted due to temperature (${temperature}°C)`,
+              timestamp: new Date().toISOString(),
+            });
+          }
         }
 
         // Auto-recover once temp drops below safe threshold

@@ -56,14 +56,12 @@ router.post('/', async (req, res) => {
         timestamp:   new Date().toISOString(),
       }]);
 
-      if (updated.temperature > 35 || vibration) {
+      if (updated.temperature > 70) {
         io.emit('safety_alert', {
           id:        `SA-ESP32-${Date.now()}`,
-          type:      vibration ? 'vibration' : 'thermal',
-          severity:  'warning',
-          message:   vibration
-            ? `Vibration detected on ${updated.name}`
-            : `High temperature on ${updated.name}: ${updated.temperature}°C`,
+          type:      'thermal',
+          severity:  updated.temperature > 80 ? 'critical' : 'warning',
+          message:   `High temperature on ${updated.name}: ${updated.temperature}°C`,
           machineId: updated.id,
           timestamp: new Date().toISOString(),
         });
