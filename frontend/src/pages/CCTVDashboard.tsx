@@ -2,7 +2,7 @@ import { Layout } from '@/components/layout/Layout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Video, VideoOff, AlertTriangle, HardHat, Users, Wifi, ExternalLink, MonitorPlay } from 'lucide-react';
 
-const STREAMLIT_URL = 'https://factorycom-lndbw6pyee7ocm9sanyqnp.streamlit.app/?embed=true';
+const STREAMLIT_URL = 'http://192.168.20.222:8501/?embed=true';
 
 const CAMERAS = [
   { id: 'CAM-01', name: 'Zone A — Assembly Line', location: 'Building 1, Floor 1' },
@@ -76,7 +76,7 @@ const CCTVDashboard = () => (
           </p>
         </div>
         <a
-          href={STREAMLIT_URL.replace('?embed=true', '')}
+          href="http://192.168.20.222:8501"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground border border-border rounded-lg px-3 py-2 transition-colors"
